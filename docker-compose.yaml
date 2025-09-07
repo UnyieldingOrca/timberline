@@ -1,0 +1,160 @@
+services:
+  etcd:
+    container_name: timberline-etcd
+    image: quay.io/coreos/etcd:v3.5.18
+    environment:
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/etcd:/etcd
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - timberline
+
+  minio:
+    container_name: timberline-minio
+    image: minio/minio:RELEASE.2024-05-28T17-19-04Z
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    ports:
+      - "9001:9001"
+      - "9000:9000"
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/minio:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - timberline
+
+  milvus:
+    container_name: timberline-milvus
+    image: milvusdb/milvus:v2.6.1
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+    - seccomp:unconfined
+    environment:
+      MINIO_REGION: us-east-1
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/milvus:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      start_period: 90s
+      timeout: 20s
+      retries: 3
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - timberline
+
+  llama-cpp-embedding:
+    container_name: timberline-llama-cpp-embedding
+    image: ghcr.io/ggml-org/llama.cpp:server
+    command:
+      - -m
+      - /models/nomic-embed-text-v1.5.f16.gguf
+      - --embeddings
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8080"
+      - --threads
+      - "8"
+      - --ctx-size
+      - "2048"
+    ports:
+      - "8000:8080"
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/llama-models:/models
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      start_period: 60s
+      timeout: 20s
+      retries: 3
+    networks:
+      - timberline
+
+  log-ingestor:
+    container_name: timberline-log-ingestor
+    build:
+      context: ./log-ingestor
+      dockerfile: Dockerfile
+    environment:
+      - SERVER_PORT=8080
+      - LOG_LEVEL=info
+      - MILVUS_ADDRESS=milvus:19530
+      - BATCH_SIZE=100
+      - BATCH_TIMEOUT=5s
+      - MAX_REQUEST_SIZE=10485760
+      - METRICS_PORT=9092
+      - READ_TIMEOUT=10s
+      - WRITE_TIMEOUT=10s
+      - RATE_LIMIT_RPS=1000
+    ports:
+      - "8080:8080"
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/v1/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      milvus:
+        condition: service_healthy
+    networks:
+      - timberline
+
+  log-collector:
+    container_name: timberline-log-collector
+    build:
+      context: ./log-collector
+      dockerfile: Dockerfile
+    environment:
+      - LOG_PATHS=/var/log/test-logs
+      - LOG_LEVELS=ERROR,WARN,INFO
+      - BUFFER_SIZE=1000
+      - FLUSH_INTERVAL=5s
+      - INGESTOR_URL=http://log-ingestor:8080/api/v1/logs/batch
+      - BATCH_SIZE=100
+      - RETRY_ATTEMPTS=3
+      - METRICS_PORT=9090
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/test-logs:/var/log/test-logs:ro
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      log-ingestor:
+        condition: service_healthy
+    networks:
+      - timberline
+
+networks:
+  timberline:
+    name: timberline
+    driver: bridge

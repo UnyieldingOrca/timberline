@@ -1,0 +1,30 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+        description: Ensures that a file is either empty or ends with one newline
+      - id: mixed-line-ending
+        description: Replaces or checks mixed line endings
+        args: ['--fix=lf']
+      - id: trailing-whitespace
+        description: Trims trailing whitespace
+      - id: check-yaml
+        args: ['--allow-multiple-documents']
+        description: Checks yaml files for parseable syntax
+      - id: check-json
+        description: Checks json files for parseable syntax
+      - id: check-toml
+        description: Checks toml files for parseable syntax
+      - id: check-merge-conflict
+        description: Check for files that contain merge conflict strings
+
+  - repo: https://github.com/Lucas-C/pre-commit-hooks
+    rev: v1.5.4
+    hooks:
+      - id: remove-crlf
+        description: Remove Windows line endings (CRLF) and replace with LF
+      - id: remove-tabs
+        description: Replace tabs with spaces
+        args: ['--whitespaces-count', '2']
+        exclude: '\.go$|\.mk$|Makefile|\.gitmodules$'
