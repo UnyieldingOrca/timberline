@@ -32,11 +32,8 @@ type Client struct {
 	cacheExpiry   time.Duration
 }
 
-// CacheEntry holds cached metadata with expiry time
-type CacheEntry struct {
-	metadata *PodInfo
-	expiry   time.Time
-}
+// Note: CacheEntry type was removed as it was unused.
+// Future implementations may add proper cache expiry functionality.
 
 // NewClient creates a new Kubernetes client
 func NewClient() (*Client, error) {

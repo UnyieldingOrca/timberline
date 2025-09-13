@@ -55,7 +55,7 @@ func (l *LogEntry) SetKubernetesMetadata(podName, namespace, nodeName string, la
 	l.Metadata["namespace"] = namespace
 	l.Metadata["node_name"] = nodeName
 	
-	if labels != nil && len(labels) > 0 {
+	if len(labels) > 0 {
 		l.Metadata["labels"] = labels
 	}
 }

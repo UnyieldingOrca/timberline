@@ -66,7 +66,12 @@ func (h *HTTPForwarder) Forward(entries []*models.LogEntry) error {
 			lastErr = err
 			continue
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				// Log or handle error if needed, but don't break flow
+				_ = err
+			}
+		}()
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			return nil // Success

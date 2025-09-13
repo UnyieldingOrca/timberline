@@ -281,33 +281,3 @@ func TestStorageInterface_Implementation(t *testing.T) {
 	var _ StorageInterface = (*MilvusClient)(nil)
 }
 
-// Integration test helper functions
-func createTestBatch(size int) *models.LogBatch {
-	logs := make([]*models.LogEntry, size)
-	for i := 0; i < size; i++ {
-		logs[i] = &models.LogEntry{
-			Timestamp: time.Now().UnixMilli(),
-			Message:   "test message " + string(rune(i)),
-			Source:    "test-source",
-			Metadata: map[string]interface{}{
-				"level":     "INFO",
-				"pod_name":  "test-pod-" + string(rune(i)),
-				"namespace": "default",
-				"index":     i,
-			},
-		}
-	}
-	return &models.LogBatch{Logs: logs}
-}
-
-func createMockEmbeddings(count, dimension int) [][]float32 {
-	embeddings := make([][]float32, count)
-	for i := 0; i < count; i++ {
-		embedding := make([]float32, dimension)
-		for j := 0; j < dimension; j++ {
-			embedding[j] = float32(i)*0.1 + float32(j)*0.01
-		}
-		embeddings[i] = embedding
-	}
-	return embeddings
-}

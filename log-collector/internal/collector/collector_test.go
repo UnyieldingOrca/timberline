@@ -146,7 +146,9 @@ func TestCollector_DiscoverLogFiles(t *testing.T) {
 	// Clean up by stopping the collector to close files
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	collector.Stop(ctx)
+	if err := collector.Stop(ctx); err != nil {
+		t.Logf("Error stopping collector: %v", err)
+	}
 
 	// Give time for goroutines to stop
 	time.Sleep(50 * time.Millisecond)
@@ -194,7 +196,9 @@ func TestCollector_StartTailing(t *testing.T) {
 	// Clean up by stopping the collector to close files
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	collector.Stop(ctx)
+	if err := collector.Stop(ctx); err != nil {
+		t.Logf("Error stopping collector: %v", err)
+	}
 
 	// Give time for goroutines to stop
 	time.Sleep(50 * time.Millisecond)
@@ -411,7 +415,11 @@ func TestCollector_ReadNewLines(t *testing.T) {
 	// Open file and create TailFile
 	file, err := os.Open(logFile)
 	require.NoError(t, err)
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			t.Logf("Error closing file: %v", err)
+		}
+	}()
 
 	stat, err := file.Stat()
 	require.NoError(t, err)
@@ -460,14 +468,20 @@ func TestCollector_ReadNewLines_FileRotation(t *testing.T) {
 
 	file, err := os.Open(logFile)
 	require.NoError(t, err)
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			t.Logf("Error closing file: %v", err)
+		}
+	}()
 
 	stat, err := file.Stat()
 	require.NoError(t, err)
 
 	// Simulate file at end
 	position := stat.Size()
-	file.Seek(position, io.SeekStart)
+	if _, err := file.Seek(position, io.SeekStart); err != nil {
+		t.Fatalf("Failed to seek file: %v", err)
+	}
 
 	tailFile := &TailFile{
 		path:     logFile,
@@ -610,7 +624,11 @@ func TestTailFile_Creation(t *testing.T) {
 
 	file, err := os.Open(logFile)
 	require.NoError(t, err)
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			t.Logf("Error closing file: %v", err)
+		}
+	}()
 
 	info, err := file.Stat()
 	require.NoError(t, err)

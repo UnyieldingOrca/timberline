@@ -66,12 +66,12 @@ func NewServer(port int) *Server {
 	})
 
 	// Try to register metrics, ignore if already registered (for tests)
-	prometheus.Register(logsCollected)
-	prometheus.Register(logsForwarded)
-	prometheus.Register(logsDropped)
-	prometheus.Register(forwardingErrors)
-	prometheus.Register(bufferSize)
-	prometheus.Register(filesWatched)
+	_ = prometheus.Register(logsCollected)
+	_ = prometheus.Register(logsForwarded)
+	_ = prometheus.Register(logsDropped)
+	_ = prometheus.Register(forwardingErrors)
+	_ = prometheus.Register(bufferSize)
+	_ = prometheus.Register(filesWatched)
 
 	router := mux.NewRouter()
 
@@ -133,14 +133,20 @@ func (s *Server) Stop() error {
 func (s *Server) healthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"status": "healthy", "service": "timberline-log-collector"}`)
+	if _, err := fmt.Fprintf(w, `{"status": "healthy", "service": "timberline-log-collector"}`); err != nil {
+		// Error writing response, but status already set
+		_ = err
+	}
 }
 
 // readinessHandler handles readiness check requests
 func (s *Server) readinessHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"status": "ready", "service": "timberline-log-collector"}`)
+	if _, err := fmt.Fprintf(w, `{"status": "ready", "service": "timberline-log-collector"}`); err != nil {
+		// Error writing response, but status already set
+		_ = err
+	}
 }
 
 // IncrementLogsCollected increments the logs collected counter

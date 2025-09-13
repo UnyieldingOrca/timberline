@@ -62,7 +62,7 @@ func TestService_GetEmbeddings_Success(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -79,7 +79,7 @@ func TestService_GetEmbedding_Success(t *testing.T) {
 	// Create mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req EmbeddingRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 
 		assert.Equal(t, []string{"single text"}, req.Input)
 
@@ -95,7 +95,7 @@ func TestService_GetEmbedding_Success(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -141,7 +141,7 @@ func TestService_GetEmbeddings_WrongDimension(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -167,7 +167,7 @@ func TestService_GetEmbeddings_MismatchedCount(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -209,7 +209,7 @@ func TestService_HealthCheck_Success(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
