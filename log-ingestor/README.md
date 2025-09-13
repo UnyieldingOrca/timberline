@@ -31,6 +31,9 @@ Configure via environment variables:
 | `SERVER_PORT` | `8080` | HTTP server port |
 | `LOG_LEVEL` | `info` | Logging level (debug, info, warn, error) |
 | `MILVUS_ADDRESS` | `milvus:19530` | Milvus database address |
+| `EMBEDDING_ENDPOINT` | `http://embedding-service:8080/embed` | Embedding service endpoint |
+| `EMBEDDING_MODEL` | `nomic-embed-text-v1.5` | Embedding model to use |
+| `EMBEDDING_DIMENSION` | `768` | Embedding vector dimension |
 | `BATCH_SIZE` | `100` | Maximum logs per batch |
 | `BATCH_TIMEOUT` | `5s` | Batch processing timeout |
 | `MAX_REQUEST_SIZE` | `10485760` | Maximum request size in bytes (10MB) |

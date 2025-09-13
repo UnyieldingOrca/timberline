@@ -400,8 +400,30 @@ func (c *Collector) processBuffer(ctx context.Context) {
 
 // sendBatch sends a batch of log entries to the forwarder
 func (c *Collector) sendBatch(batch []*models.LogEntry) {
-	if err := c.forwarder.Forward(batch); err != nil {
-		c.logger.WithError(err).WithField("batch_size", len(batch)).Error("Failed to forward log batch")
+	if len(batch) == 0 {
+		return
+	}
+
+	// Split into smaller batches if necessary
+	maxBatchSize := c.config.MaxBatchSize
+	if maxBatchSize <= 0 {
+		maxBatchSize = len(batch) // Send all if not configured
+	}
+
+	for i := 0; i < len(batch); i += maxBatchSize {
+		end := i + maxBatchSize
+		if end > len(batch) {
+			end = len(batch)
+		}
+
+		subBatch := batch[i:end]
+		if err := c.forwarder.Forward(subBatch); err != nil {
+			c.logger.WithError(err).WithFields(logrus.Fields{
+				"batch_size":    len(subBatch),
+				"total_entries": len(batch),
+				"forwarder_url": c.config.ForwarderURL,
+			}).Error("Failed to forward log batch")
+		}
 	}
 }
 

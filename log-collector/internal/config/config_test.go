@@ -124,6 +124,7 @@ func TestCollectorConfig_StructFields(t *testing.T) {
 		{"BufferSize", reflect.TypeOf(int(0))},
 		{"FlushInterval", reflect.TypeOf(time.Duration(0))},
 		{"ForwarderURL", reflect.TypeOf("")},
+		{"MaxBatchSize", reflect.TypeOf(int(0))},
 	}
 
 	for _, test := range tests {
@@ -151,6 +152,7 @@ func TestCollectorConfig_YAMLTags(t *testing.T) {
 		"BufferSize":    "buffer_size",
 		"FlushInterval": "flush_interval",
 		"ForwarderURL":  "forwarder_url",
+		"MaxBatchSize":  "max_batch_size",
 	}
 
 	for fieldName, expectedTag := range expectedYAMLTags {
@@ -179,6 +181,7 @@ func TestCollectorConfig_EnvTags(t *testing.T) {
 		"BufferSize":    "BUFFER_SIZE",
 		"FlushInterval": "FLUSH_INTERVAL",
 		"ForwarderURL":  "FORWARDER_URL",
+		"MaxBatchSize":  "MAX_BATCH_SIZE",
 	}
 
 	for fieldName, expectedTag := range expectedEnvTags {

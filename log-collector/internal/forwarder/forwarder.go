@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -72,7 +73,17 @@ func (h *HTTPForwarder) Forward(entries []*models.LogEntry) error {
 			return nil // Success
 		}
 
-		lastErr = fmt.Errorf("HTTP forwarder: received status %d", resp.StatusCode)
+		// Read response body for error details (limit to 1KB to avoid memory issues)
+		body, bodyErr := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		var bodyStr string
+		if bodyErr == nil && len(body) > 0 {
+			bodyStr = string(body)
+		} else {
+			bodyStr = "no response body"
+		}
+
+		lastErr = fmt.Errorf("HTTP forwarder: received status %d from %s, response: %s, attempt %d/%d",
+			resp.StatusCode, h.url, bodyStr, attempt+1, h.maxRetries+1)
 
 		// Only retry on server errors (5xx), not client errors (4xx)
 		if resp.StatusCode < 500 {

@@ -23,6 +23,9 @@ type CollectorConfig struct {
 
 	// ForwarderURL is the endpoint to forward logs to
 	ForwarderURL string `yaml:"forwarder_url" env:"FORWARDER_URL"`
+
+	// MaxBatchSize is the maximum number of log entries to send in a single batch to the ingestor
+	MaxBatchSize int `yaml:"max_batch_size" env:"MAX_BATCH_SIZE"`
 }
 
 // Config represents the main configuration structure
@@ -40,6 +43,7 @@ func Load() (*Config, error) {
 		BufferSize:    getIntFromEnv("BUFFER_SIZE", 1000),
 		FlushInterval: getDurationFromEnv("FLUSH_INTERVAL", 5*time.Second),
 		ForwarderURL:  getStringFromEnv("FORWARDER_URL", "http://log-ingestor:8080"),
+		MaxBatchSize:  getIntFromEnv("MAX_BATCH_SIZE", 100),
 	}
 
 	config := &Config{

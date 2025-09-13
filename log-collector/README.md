@@ -30,9 +30,8 @@ The log collector is configured via environment variables:
 | `LOG_LEVELS` | Comma-separated list of log levels to collect | `ERROR,WARN,FATAL` |
 | `BUFFER_SIZE` | Internal buffer size for log entries | `1000` |
 | `FLUSH_INTERVAL` | Interval to flush buffered logs | `5s` |
-| `INGESTOR_URL` | URL of the log ingestor service | `http://log-ingestor:8080` |
-| `BATCH_SIZE` | Number of logs per batch | `100` |
-| `RETRY_ATTEMPTS` | Number of retry attempts for failed requests | `3` |
+| `FORWARDER_URL` | URL of the log ingestor service | `http://log-ingestor:8080` |
+| `MAX_BATCH_SIZE` | Number of logs per batch | `100` |
 | `METRICS_PORT` | Port for Prometheus metrics endpoint | `9090` |
 
 ## Resource Requirements

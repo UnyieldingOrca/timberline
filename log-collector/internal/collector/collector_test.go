@@ -564,6 +564,92 @@ func TestCollector_SendBatch(t *testing.T) {
 	mockForwarder.AssertExpectations(t)
 }
 
+func TestCollector_SendBatch_MaxBatchSize(t *testing.T) {
+	cfg := config.CollectorConfig{MaxBatchSize: 2}
+	mockForwarder := &MockForwarder{}
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+
+	collector, err := New(cfg, mockForwarder, logger)
+	require.NoError(t, err)
+
+	// Create a batch larger than MaxBatchSize
+	batch := []*models.LogEntry{
+		{
+			Timestamp: time.Now().UnixMilli(),
+			Message:   "Test message 1",
+			Source:    "test1",
+			Metadata:  map[string]interface{}{"level": "INFO"},
+		},
+		{
+			Timestamp: time.Now().UnixMilli(),
+			Message:   "Test message 2",
+			Source:    "test2",
+			Metadata:  map[string]interface{}{"level": "ERROR"},
+		},
+		{
+			Timestamp: time.Now().UnixMilli(),
+			Message:   "Test message 3",
+			Source:    "test3",
+			Metadata:  map[string]interface{}{"level": "WARN"},
+		},
+		{
+			Timestamp: time.Now().UnixMilli(),
+			Message:   "Test message 4",
+			Source:    "test4",
+			Metadata:  map[string]interface{}{"level": "DEBUG"},
+		},
+		{
+			Timestamp: time.Now().UnixMilli(),
+			Message:   "Test message 5",
+			Source:    "test5",
+			Metadata:  map[string]interface{}{"level": "INFO"},
+		},
+	}
+
+	// Expect three Forward calls: [0:2], [2:4], [4:5]
+	mockForwarder.On("Forward", batch[0:2]).Return(nil).Once()
+	mockForwarder.On("Forward", batch[2:4]).Return(nil).Once()
+	mockForwarder.On("Forward", batch[4:5]).Return(nil).Once()
+
+	collector.sendBatch(batch)
+
+	mockForwarder.AssertExpectations(t)
+}
+
+func TestCollector_SendBatch_MaxBatchSizeZero(t *testing.T) {
+	cfg := config.CollectorConfig{MaxBatchSize: 0}
+	mockForwarder := &MockForwarder{}
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+
+	collector, err := New(cfg, mockForwarder, logger)
+	require.NoError(t, err)
+
+	// Create a batch
+	batch := []*models.LogEntry{
+		{
+			Timestamp: time.Now().UnixMilli(),
+			Message:   "Test message 1",
+			Source:    "test1",
+			Metadata:  map[string]interface{}{"level": "INFO"},
+		},
+		{
+			Timestamp: time.Now().UnixMilli(),
+			Message:   "Test message 2",
+			Source:    "test2",
+			Metadata:  map[string]interface{}{"level": "ERROR"},
+		},
+	}
+
+	// With MaxBatchSize 0, should send entire batch at once
+	mockForwarder.On("Forward", batch).Return(nil).Once()
+
+	collector.sendBatch(batch)
+
+	mockForwarder.AssertExpectations(t)
+}
+
 func TestCollector_FlushBuffer(t *testing.T) {
 	cfg := config.CollectorConfig{BufferSize: 10}
 	mockForwarder := &MockForwarder{}
