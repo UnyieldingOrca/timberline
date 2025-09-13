@@ -20,6 +20,9 @@ def test_complete_pipeline_file_to_milvus(test_logs_dir, milvus_host, milvus_por
     log_entry = f"{current_time} ERROR [database-service] {test_message}"
 
     with open(log_file, 'w') as f:
+        f.write('\n')
+        f.flush()
+        time.sleep(0.5)  # Ensure the file is created before writing the log
         f.write(log_entry + '\n')
         f.flush()  # Ensure data is written to disk
 
@@ -27,7 +30,7 @@ def test_complete_pipeline_file_to_milvus(test_logs_dir, milvus_host, milvus_por
         # Step 2: Wait for the log collector to pick up and process the log
         # The collector has a 2s flush interval, plus time for ingestor processing
         # Keep the file alive until after processing completes
-        time.sleep(8)
+        time.sleep(3)
 
         # Step 3: Connect to Milvus and verify the log was stored with embeddings
         connections.connect(alias="pipeline_test", host=milvus_host, port=milvus_port)

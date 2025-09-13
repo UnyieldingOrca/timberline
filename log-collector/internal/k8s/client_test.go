@@ -4,11 +4,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestClient_parseContainerLogPath(t *testing.T) {
-	client := &Client{}
+	logger := logrus.New()
+	logger.SetLevel(logrus.PanicLevel) // Suppress debug output in tests
+	client := &Client{logger: logger}
 
 	tests := []struct {
 		name    string
@@ -52,7 +55,9 @@ func TestClient_parseContainerLogPath(t *testing.T) {
 }
 
 func TestClient_parsePodLogPath(t *testing.T) {
-	client := &Client{}
+	logger := logrus.New()
+	logger.SetLevel(logrus.PanicLevel) // Suppress debug output in tests
+	client := &Client{logger: logger}
 
 	tests := []struct {
 		name    string
@@ -96,7 +101,10 @@ func TestClient_parsePodLogPath(t *testing.T) {
 }
 
 func TestClient_GetPodInfo_PathParsing(t *testing.T) {
+	logger := logrus.New()
+	logger.SetLevel(logrus.PanicLevel) // Suppress debug output in tests
 	client := &Client{
+		logger:        logger,
 		metadataCache: make(map[string]*PodInfo),
 		cacheExpiry:   5 * time.Minute,
 	}
@@ -141,7 +149,10 @@ func TestClient_GetPodInfo_PathParsing(t *testing.T) {
 }
 
 func TestClient_Cache(t *testing.T) {
+	logger := logrus.New()
+	logger.SetLevel(logrus.PanicLevel) // Suppress debug output in tests
 	client := &Client{
+		logger:        logger,
 		metadataCache: make(map[string]*PodInfo),
 		cacheExpiry:   5 * time.Minute,
 	}

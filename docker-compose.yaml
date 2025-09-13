@@ -104,7 +104,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - SERVER_PORT=8080
-      - LOG_LEVEL=info
+      - LOG_LEVEL=debug
       - MILVUS_ADDRESS=milvus:19530
       - EMBEDDING_ENDPOINT=http://llama-cpp-embedding:8000/embedding
       - EMBEDDING_MODEL=nomic-embed-text-v1.5
@@ -139,6 +139,8 @@ services:
       context: ./log-collector
       dockerfile: Dockerfile
     environment:
+      # Log level for the collector application: debug, info, warn, error, fatal, panic
+      - LOG_LEVEL=debug
       - LOG_PATHS=/var/log/test-logs/*.log
       - LOG_LEVELS=ERROR,WARN,INFO
       - BUFFER_SIZE=1000
