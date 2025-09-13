@@ -7,8 +7,6 @@ import pytest
 import requests
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 @pytest.mark.parametrize("service_name,url", [
     ("Log Collector", "http://localhost:9090/metrics"),
     ("Log Ingestor", "http://localhost:9092/metrics"),
@@ -21,8 +19,6 @@ def test_metrics_endpoint_accessibility(service_name, url, http_retry):
     assert len(response.text) > 0, f"{service_name} metrics response is empty"
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_log_collector_metrics_content(http_retry):
     """Test log collector metrics endpoint content."""
     response = http_retry("http://localhost:9090/metrics", timeout=10)
@@ -37,8 +33,6 @@ def test_log_collector_metrics_content(http_retry):
     assert len(found_metrics) > 0, f"No expected metrics found. Available metrics preview: {metrics_text[:500]}"
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_log_ingestor_metrics_content(http_retry):
     """Test log ingestor metrics endpoint content."""
     response = http_retry("http://localhost:9092/metrics", timeout=10)
@@ -53,16 +47,12 @@ def test_log_ingestor_metrics_content(http_retry):
     assert len(found_metrics) > 0, f"No expected metrics found in log ingestor. Available: {metrics_text[:500]}"
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_milvus_health_endpoint(http_retry):
     """Test Milvus health endpoint."""
     response = http_retry("http://localhost:9091/healthz", timeout=10)
     assert response.status_code == 200, "Milvus health endpoint not accessible"
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 @pytest.mark.parametrize("metric_pattern", [
     "go_goroutines",
     "go_memstats_",
@@ -84,8 +74,6 @@ def test_standard_go_metrics_present(metric_pattern, http_retry):
             f"Metric pattern '{metric_pattern}' not found in {endpoint}"
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_metrics_format_validity(http_retry):
     """Test that metrics are in valid Prometheus format."""
     endpoints = [
@@ -111,8 +99,6 @@ def test_metrics_format_validity(http_retry):
                 assert len(parts) >= 2, f"Invalid metric line format in {service_name}: {line}"
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_metrics_response_time(http_retry):
     """Test that metrics endpoints respond quickly."""
     endpoints = [
@@ -132,8 +118,6 @@ def test_metrics_response_time(http_retry):
         assert response_time < 5.0, f"Metrics endpoint {endpoint} took too long: {response_time:.2f}s"
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_metrics_consistency_across_calls(http_retry):
     """Test that metrics endpoints return consistent data structure across multiple calls."""
     endpoint = "http://localhost:9090/metrics"
@@ -169,8 +153,6 @@ def test_metrics_consistency_across_calls(http_retry):
     assert consistency_ratio > 0.8, f"Metrics inconsistent across calls: {consistency_ratio:.2f}"
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_all_metrics_endpoints_simultaneously(metrics_endpoints, http_retry):
     """Test all metrics endpoints simultaneously for load testing."""
     import concurrent.futures

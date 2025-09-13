@@ -8,8 +8,6 @@ import requests
 import time
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_log_ingestor_health(ingestor_url, http_retry):
     """Test log ingestor health endpoint."""
     response = http_retry(f"{ingestor_url}/api/v1/health", timeout=10)
@@ -20,8 +18,6 @@ def test_log_ingestor_health(ingestor_url, http_retry):
     assert health_data["status"] == "healthy"
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_log_ingestor_liveness(ingestor_url, http_retry):
     """Test log ingestor liveness endpoint."""
     response = http_retry(f"{ingestor_url}/api/v1/healthz", timeout=10)
@@ -29,8 +25,6 @@ def test_log_ingestor_liveness(ingestor_url, http_retry):
     assert response.text.strip() == "OK"
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_log_ingestor_metrics(http_retry):
     """Test log ingestor metrics endpoint."""
     response = http_retry("http://localhost:9092/metrics", timeout=10)
@@ -38,8 +32,6 @@ def test_log_ingestor_metrics(http_retry):
     assert len(response.text) > 0
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_single_log_ingestion(ingestor_url, sample_log_entry, http_retry):
     """Test ingesting a single log entry."""
     response = http_retry(
@@ -56,8 +48,6 @@ def test_single_log_ingestion(ingestor_url, sample_log_entry, http_retry):
     assert result.get("processed_count") == 1
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_batch_log_ingestion(ingestor_url, log_generator, http_retry):
     """Test ingesting multiple log entries."""
     log_entries = log_generator.generate_log_entries_for_api(count=4)
@@ -76,8 +66,6 @@ def test_batch_log_ingestion(ingestor_url, log_generator, http_retry):
     assert result.get("processed_count") == len(log_entries)
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_log_collector_connectivity(ingestor_url, http_retry):
     """Test connectivity between log-collector and log-ingestor."""
     log_payload = {
@@ -109,8 +97,6 @@ def test_log_collector_connectivity(ingestor_url, http_retry):
         f"Log forwarding failed: {response.status_code} {response.text}"
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 @pytest.mark.parametrize("log_count", [1, 5, 25, 100])
 def test_variable_batch_sizes(ingestor_url, log_generator, log_count, http_retry):
     """Test ingesting different batch sizes."""
@@ -131,8 +117,6 @@ def test_variable_batch_sizes(ingestor_url, log_generator, log_count, http_retry
     assert result.get("processed_count") == log_count
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 @pytest.mark.parametrize("level", ["ERROR", "WARN", "INFO", "DEBUG"])
 def test_different_log_levels(ingestor_url, level, http_retry):
     """Test ingesting logs with different severity levels."""
@@ -164,8 +148,6 @@ def test_different_log_levels(ingestor_url, level, http_retry):
     assert result.get("processed_count") == 1
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_empty_batch_handling(ingestor_url, http_retry):
     """Test handling of empty log batches."""
     response = http_retry(
@@ -180,8 +162,6 @@ def test_empty_batch_handling(ingestor_url, http_retry):
     assert response.status_code in [200, 400], "Empty batch should be handled gracefully"
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 @pytest.mark.parametrize("invalid_payload", [
     {},  # Missing logs field
     {"logs": "not-a-list"},  # Invalid logs type
@@ -202,8 +182,6 @@ def test_invalid_payload_handling(ingestor_url, invalid_payload, http_retry):
     assert response.status_code >= 400, f"Should reject invalid payload: {invalid_payload}"
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_concurrent_log_ingestion(ingestor_url, log_generator, http_retry):
     """Test handling concurrent log ingestion requests."""
     import threading

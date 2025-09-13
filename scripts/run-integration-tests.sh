@@ -86,9 +86,7 @@ echo -e "${YELLOW}Running integration tests...${NC}"
 TEST_ARGS=""
 echo "Running tests sequentially"
 
-# Run tests with appropriate markers
 pytest tests/docker/ \
-    -m "docker and integration" \
     --timeout=300 \
     -v \
     --tb=short \

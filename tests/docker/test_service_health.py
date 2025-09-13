@@ -7,8 +7,6 @@ import pytest
 import requests
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 @pytest.mark.parametrize("service_name,url,expected_status", [
     ("Milvus Metrics", "http://localhost:9091/healthz", 200),
     ("llama.cpp", "http://localhost:8000/health", 200),
@@ -24,8 +22,6 @@ def test_service_health_endpoint(service_name, url, expected_status, http_retry)
         f"{service_name} health check failed: status {response.status_code}, response: {response.text[:200]}"
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_all_services_healthy(service_endpoints, http_retry):
     """Test that all services are healthy simultaneously."""
     failed_services = []

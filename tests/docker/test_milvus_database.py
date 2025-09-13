@@ -8,16 +8,12 @@ import pytest
 from pymilvus import utility
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_milvus_connection(milvus_connection):
     """Test connection to Milvus database."""
     # Connection is established in fixture, just verify it works
     assert True
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_list_collections(milvus_connection):
     """Test listing collections in Milvus (should show collections created by services)."""
     try:
@@ -29,8 +25,6 @@ def test_list_collections(milvus_connection):
         pytest.skip(f"Could not list collections: {e}")
 
 
-@pytest.mark.docker
-@pytest.mark.integration
 def test_milvus_connection_info(milvus_connection):
     """Test getting Milvus connection information."""
     try:

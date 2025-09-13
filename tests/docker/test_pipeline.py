@@ -3,23 +3,17 @@ End-to-end pipeline and data persistence tests.
 Tests complete data flow from log-collector through log-ingestor to Milvus with embeddings.
 """
 
-import pytest
-import requests
 import time
 import json
-import os
-from pathlib import Path
+
 from pymilvus import connections, Collection, utility
 
 
-@pytest.mark.docker
-@pytest.mark.integration
-@pytest.mark.slow
 def test_complete_pipeline_file_to_milvus(test_logs_dir, milvus_host, milvus_port, http_retry):
     """Test complete pipeline: log file -> collector -> ingestor -> Milvus."""
     # Step 1: Create a unique test log file that the collector will monitor
     test_message = f"PIPELINE_TEST_{int(time.time())}: Critical database connection failure"
-    log_file = test_logs_dir / "pipeline-test.log"
+    log_file = test_logs_dir / f"pipeline-test_{int(time.time())}.log"
 
     # Write a distinctly identifiable log entry
     current_time = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
@@ -29,7 +23,7 @@ def test_complete_pipeline_file_to_milvus(test_logs_dir, milvus_host, milvus_por
         f.write(log_entry + '\n')
 
     # Step 2: Wait for the log collector to pick up and process the log
-    time.sleep(4)
+    time.sleep(10)
 
     # Step 4: Connect to Milvus and verify the log was stored with embeddings
     connections.connect(alias="pipeline_test", host=milvus_host, port=milvus_port)
@@ -75,3 +69,5 @@ def test_complete_pipeline_file_to_milvus(test_logs_dir, milvus_host, milvus_por
         # Clean up test file
         if log_file.exists():
             log_file.unlink()
+
+

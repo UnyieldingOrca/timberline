@@ -16,27 +16,24 @@ def test_logs_dir():
     return Path(__file__).parents[2] / "volumes" / "test-logs"
 
 
-@pytest.fixture(scope="session")
-def log_generator(test_logs_dir):
-    """Create and configure log generator."""
-    generator = LogGenerator(output_dir=str(test_logs_dir))
-    return generator
+@pytest.fixture
+def log_generator(test_logs_dir, request):
+    """Create and configure log generator for each test function.
 
+    Each test gets its own log generator instance with a unique subdirectory
+    to avoid conflicts between parallel tests.
+    """
+    # Create unique subdirectory for this test
+    test_name = request.node.name
+    unique_dir = test_logs_dir / f"test_{test_name}_{int(time.time() * 1000)}"
+    unique_dir.mkdir(parents=True, exist_ok=True)
 
-@pytest.fixture(scope="session", autouse=True)
-def setup_test_logs(log_generator, test_logs_dir):
-    """Setup test logs before running tests."""
-    # Ensure test logs directory exists
-    test_logs_dir.mkdir(exist_ok=True)
+    generator = LogGenerator(output_dir=str(unique_dir))
 
-    # Generate all test logs
-    log_generator.generate_all_test_logs()
+    yield generator
 
-    yield
-
-    # Cleanup after tests complete
-    # Optionally keep logs for debugging: comment out the cleanup line
-    # log_generator.cleanup()
+    # Optional cleanup - uncomment to remove test logs after each test
+    # generator.cleanup()
 
 
 # Service URL fixtures
@@ -130,8 +127,6 @@ def milvus_connection(milvus_host, milvus_port):
     connections.disconnect("default")
 
 
-
-
 # Helper fixtures
 @pytest.fixture
 def retry_config():
@@ -165,5 +160,4 @@ def make_request_with_retry(url, method="GET", max_retries=3, retry_delay=1, tim
 def http_retry():
     """HTTP request helper with retry logic."""
     return make_request_with_retry
-
 
