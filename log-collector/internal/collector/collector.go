@@ -158,13 +158,17 @@ func (c *Collector) startTailing(path string) error {
 	// Seek to end of file to only capture new logs
 	stat, err := file.Stat()
 	if err != nil {
-		file.Close()
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("failed to close file after stat error %s: %w", path, err)
+		}
 		return fmt.Errorf("failed to stat file %s: %w", path, err)
 	}
 
 	position, err := file.Seek(0, io.SeekEnd)
 	if err != nil {
-		file.Close()
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("failed to close file after seek error %s: %w", path, err)
+		}
 		return fmt.Errorf("failed to seek to end of file %s: %w", path, err)
 	}
 
@@ -212,7 +216,9 @@ func (c *Collector) readNewLines(tf *TailFile) error {
 	// Check if file was truncated or rotated
 	if stat.Size() < tf.position {
 		tf.position = 0
-		tf.file.Seek(0, io.SeekStart)
+		if _, err := tf.file.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
 		tf.reader = bufio.NewReader(tf.file)
 	}
 

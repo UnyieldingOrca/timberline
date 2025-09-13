@@ -58,7 +58,7 @@ func (h *HealthHandler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 
 	h.logger.WithFields(logrus.Fields{
 		"status":     overallStatus,
@@ -84,7 +84,7 @@ func (h *HealthHandler) checkStorage(ctx context.Context) models.HealthCheck {
 
 func (h *HealthHandler) HandleLiveness(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("OK"))
+	_, _ = w.Write([]byte("OK"))
 }
 
 func (h *HealthHandler) HandleReadiness(w http.ResponseWriter, r *http.Request) {
@@ -94,10 +94,10 @@ func (h *HealthHandler) HandleReadiness(w http.ResponseWriter, r *http.Request) 
 	if err := h.storage.HealthCheck(ctx); err != nil {
 		h.logger.WithError(err).Warn("Readiness check failed")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte("Not Ready"))
+		_, _ = w.Write([]byte("Not Ready"))
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Ready"))
+	_, _ = w.Write([]byte("Ready"))
 }

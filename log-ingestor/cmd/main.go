@@ -52,7 +52,11 @@ func main() {
 	if err := storageClient.Connect(ctx); err != nil {
 		logger.WithError(err).Fatal("Failed to connect to storage")
 	}
-	defer storageClient.Close()
+	defer func() {
+		if err := storageClient.Close(); err != nil {
+			logger.WithError(err).Error("Failed to close storage client")
+		}
+	}()
 	
 	// Create collection if it doesn't exist
 	if err := storageClient.CreateCollection(ctx); err != nil {

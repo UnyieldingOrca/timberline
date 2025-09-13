@@ -66,7 +66,7 @@ func TestNewConfigWithEnvironmentVariables(t *testing.T) {
 	}
 
 	for key, value := range testEnvs {
-		os.Setenv(key, value)
+		_ = os.Setenv(key, value)
 	}
 	defer clearTestEnvs()
 
@@ -274,8 +274,8 @@ func TestGetEnvHelpers(t *testing.T) {
 		}
 
 		// Test with existing env
-		os.Setenv("TEST_STRING", "test_value")
-		defer os.Unsetenv("TEST_STRING")
+		_ = os.Setenv("TEST_STRING", "test_value")
+		defer func() { _ = os.Unsetenv("TEST_STRING") }()
 		result = getEnv("TEST_STRING", "default")
 		if result != "test_value" {
 			t.Errorf("Expected 'test_value', got '%s'", result)
@@ -290,16 +290,16 @@ func TestGetEnvHelpers(t *testing.T) {
 		}
 
 		// Test with valid int
-		os.Setenv("TEST_INT", "100")
-		defer os.Unsetenv("TEST_INT")
+		_ = os.Setenv("TEST_INT", "100")
+		defer func() { _ = os.Unsetenv("TEST_INT") }()
 		result = getEnvAsInt("TEST_INT", 42)
 		if result != 100 {
 			t.Errorf("Expected 100, got %d", result)
 		}
 
 		// Test with invalid int (should use default)
-		os.Setenv("TEST_INVALID_INT", "not_a_number")
-		defer os.Unsetenv("TEST_INVALID_INT")
+		_ = os.Setenv("TEST_INVALID_INT", "not_a_number")
+		defer func() { _ = os.Unsetenv("TEST_INVALID_INT") }()
 		result = getEnvAsInt("TEST_INVALID_INT", 42)
 		if result != 42 {
 			t.Errorf("Expected 42 (default), got %d", result)
@@ -314,16 +314,16 @@ func TestGetEnvHelpers(t *testing.T) {
 		}
 
 		// Test with valid int64
-		os.Setenv("TEST_INT64", "9223372036854775807")
-		defer os.Unsetenv("TEST_INT64")
+		_ = os.Setenv("TEST_INT64", "9223372036854775807")
+		defer func() { _ = os.Unsetenv("TEST_INT64") }()
 		result = getEnvAsInt64("TEST_INT64", 1000)
 		if result != 9223372036854775807 {
 			t.Errorf("Expected 9223372036854775807, got %d", result)
 		}
 
 		// Test with invalid int64 (should use default)
-		os.Setenv("TEST_INVALID_INT64", "not_a_number")
-		defer os.Unsetenv("TEST_INVALID_INT64")
+		_ = os.Setenv("TEST_INVALID_INT64", "not_a_number")
+		defer func() { _ = os.Unsetenv("TEST_INVALID_INT64") }()
 		result = getEnvAsInt64("TEST_INVALID_INT64", 1000)
 		if result != 1000 {
 			t.Errorf("Expected 1000 (default), got %d", result)
@@ -338,16 +338,16 @@ func TestGetEnvHelpers(t *testing.T) {
 		}
 
 		// Test with valid duration
-		os.Setenv("TEST_DURATION", "30s")
-		defer os.Unsetenv("TEST_DURATION")
+		_ = os.Setenv("TEST_DURATION", "30s")
+		defer func() { _ = os.Unsetenv("TEST_DURATION") }()
 		result = getEnvAsDuration("TEST_DURATION", 5*time.Second)
 		if result != 30*time.Second {
 			t.Errorf("Expected 30s, got %v", result)
 		}
 
 		// Test with invalid duration (should use default)
-		os.Setenv("TEST_INVALID_DURATION", "not_a_duration")
-		defer os.Unsetenv("TEST_INVALID_DURATION")
+		_ = os.Setenv("TEST_INVALID_DURATION", "not_a_duration")
+		defer func() { _ = os.Unsetenv("TEST_INVALID_DURATION") }()
 		result = getEnvAsDuration("TEST_INVALID_DURATION", 5*time.Second)
 		if result != 5*time.Second {
 			t.Errorf("Expected 5s (default), got %v", result)
@@ -365,6 +365,6 @@ func clearTestEnvs() {
 		"TEST_DURATION", "TEST_INVALID_DURATION",
 	}
 	for _, env := range envs {
-		os.Unsetenv(env)
+		_ = os.Unsetenv(env)
 	}
 }

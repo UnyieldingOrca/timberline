@@ -63,7 +63,7 @@ func TestServer_MetricsEndpoint(t *testing.T) {
 
 	// Start server in background
 	go func() {
-		server.Start()
+		_ = server.Start()
 	}()
 
 	// Give the server a moment to start
@@ -89,7 +89,7 @@ func TestServer_MetricsEndpoint(t *testing.T) {
 	// Stop the server
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	server.Stop(ctx)
+	_ = server.Stop(ctx)
 }
 
 func TestServer_Start_InvalidPort(t *testing.T) {
@@ -213,6 +213,7 @@ func TestServer_HandlerSetup(t *testing.T) {
 		// Just verify we get a response
 		if body == "" && rr.statusCode == http.StatusOK {
 			// This is acceptable - no metrics registered yet
+			return
 		}
 	}
 }

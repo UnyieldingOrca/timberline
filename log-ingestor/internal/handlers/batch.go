@@ -138,7 +138,7 @@ func (h *BatchHandler) HandleBatch(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 
 	h.logger.WithFields(logrus.Fields{
 		"processed_count": batch.Size(),
@@ -154,5 +154,5 @@ func (h *BatchHandler) writeErrorResponse(w http.ResponseWriter, statusCode int,
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
