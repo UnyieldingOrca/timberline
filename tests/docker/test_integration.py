@@ -274,23 +274,10 @@ class TestLogIngestor:
         assert result.get("success") == True
         assert result.get("processed_count") == 1
 
-    def test_batch_log_ingestion(self, ingestor_url):
+    def test_batch_log_ingestion(self, ingestor_url, log_generator):
         """Test ingesting multiple log entries"""
-        log_entries = [
-            {
-                "timestamp": int(time.time() * 1000) + (i * 1000),  # Milliseconds with 1s intervals
-                "message": f"{level}: Test message {i} from container",
-                "source": "test-service",
-                "metadata": {
-                    "level": level,
-                    "container_name": f"test-container-{i}",
-                    "namespace": "default",
-                    "pod_name": f"test-pod-{i}",
-                    "service_name": "test-service"
-                }
-            }
-            for i, level in enumerate(["ERROR", "WARN", "INFO", "DEBUG"])
-        ]
+        # Use log generator to create test data
+        log_entries = log_generator.generate_log_entries_for_api(count=4)
 
         response = requests.post(
             f"{ingestor_url}/api/v1/logs/batch",
@@ -299,7 +286,7 @@ class TestLogIngestor:
             timeout=30
         )
         assert response.status_code == 200 or response.status_code == 202
-        
+
         result = response.json()
         assert result.get("success") == True
         assert result.get("processed_count") == len(log_entries)
@@ -342,22 +329,13 @@ class TestLogIngestor:
 class TestDataPersistence:
     """Test data persistence from log-ingestor to Milvus."""
 
-    def test_ingestor_to_milvus_data_flow(self):
+    def test_ingestor_to_milvus_data_flow(self, log_generator):
         """Test that log-ingestor correctly stores data in Milvus with embeddings"""
-        # Step 1: Send log to ingestor
+        # Step 1: Generate and send log to ingestor
         ingestor_url = "http://localhost:8080"
-        test_log = {
-            "timestamp": int(time.time() * 1000),  # Convert to milliseconds
-            "message": "Integration test: Memory usage spike detected",
-            "source": "test-application",
-            "metadata": {
-                "level": "WARN",
-                "container_name": "test-app-container",
-                "namespace": "production",
-                "pod_name": "test-app-pod-123",
-                "service_name": "test-application"
-            }
-        }
+        test_logs = log_generator.generate_log_entries_for_api(count=1)
+        test_log = test_logs[0]
+        test_log["message"] = "Integration test: Memory usage spike detected"
         
         # Send log to ingestor via batch endpoint
         response = requests.post(
@@ -428,24 +406,16 @@ class TestDataPersistence:
         
         connections.disconnect("default")
 
-    def test_embedding_generation_and_storage(self):
+    def test_embedding_generation_and_storage(self, log_generator):
         """Test that logs get proper embeddings when stored in Milvus"""
         # This test verifies that the log-ingestor is properly generating
         # embeddings using the llama.cpp service and storing them in Milvus
-        
+
         ingestor_url = "http://localhost:8080"
-        test_log = {
-            "timestamp": int(time.time() * 1000),  # Convert to milliseconds
-            "message": "Critical system failure in database connection pool",
-            "source": "database",
-            "metadata": {
-                "level": "ERROR",
-                "container_name": "database-service",
-                "namespace": "production",
-                "pod_name": "db-service-pod-456",
-                "service_name": "database"
-            }
-        }
+        test_logs = log_generator.generate_log_entries_for_api(count=1)
+        test_log = test_logs[0]
+        test_log["message"] = "Critical system failure in database connection pool"
+        test_log["source"] = "database"
         
         # Send log to ingestor via batch endpoint
         response = requests.post(
@@ -511,6 +481,53 @@ class TestDataPersistence:
         
         connections.disconnect("default")
         print("No collections with embeddings found - this may be expected during development")
+
+
+@pytest.mark.docker
+@pytest.mark.integration
+class TestPipelineWithGeneratedLogs:
+    """Test complete pipeline using generated log data."""
+
+    def test_generated_logs_processing(self, log_generator):
+        """Test processing of various generated log formats."""
+        ingestor_url = "http://localhost:8080"
+
+        # Test different types of generated logs
+        test_scenarios = [
+            ("Simple app logs", log_generator.generate_log_entries_for_api(count=5)),
+            ("High volume logs", log_generator.generate_log_entries_for_api(count=50)),
+        ]
+
+        for scenario_name, log_entries in test_scenarios:
+            response = requests.post(
+                f"{ingestor_url}/api/v1/logs/batch",
+                json={"logs": log_entries},
+                headers={"Content-Type": "application/json"},
+                timeout=60
+            )
+
+            assert response.status_code in [200, 202], f"{scenario_name} failed: {response.text}"
+
+            result = response.json()
+            assert result.get("success") == True, f"{scenario_name} processing failed"
+            assert result.get("processed_count") == len(log_entries), f"{scenario_name} count mismatch"
+
+    def test_log_file_creation(self, log_generator, test_logs_dir):
+        """Test that log files are created properly."""
+        # Verify generated log files exist
+        expected_files = [
+            "app-errors.log",
+            "structured-logs.log",
+            "k8s-app.log",
+            "mixed-format.log",
+            "high-volume.log",
+            "special-chars.log"
+        ]
+
+        for filename in expected_files:
+            log_file = test_logs_dir / filename
+            assert log_file.exists(), f"Generated log file {filename} not found"
+            assert log_file.stat().st_size > 0, f"Generated log file {filename} is empty"
 
 
 @pytest.mark.docker
