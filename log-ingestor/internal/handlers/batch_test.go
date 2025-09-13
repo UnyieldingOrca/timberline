@@ -91,6 +91,10 @@ func (m *mockStorage) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
+func (m *mockStorage) CreateCollection(ctx context.Context) error {
+	return nil
+}
+
 func TestNewBatchHandler(t *testing.T) {
 	storage := &mockStorage{}
 	maxBatchSize := 100
@@ -120,8 +124,8 @@ func TestBatchHandler_HandleBatch_Success(t *testing.T) {
 
 	// Create a valid log batch
 	batch := models.LogBatch{
-		Logs: []models.LogEntry{
-			{
+		Logs: []*models.LogEntry{
+			&models.LogEntry{
 				Timestamp: 1704110400000, // 2024-01-01T12:00:00Z
 				Message:   "Test log message",
 				Source:    "test-source",
@@ -223,7 +227,7 @@ func TestBatchHandler_HandleBatch_EmptyBatch(t *testing.T) {
 	storage := &mockStorage{}
 	handler := createTestBatchHandler(storage, 100)
 
-	batch := models.LogBatch{Logs: []models.LogEntry{}}
+	batch := models.LogBatch{Logs: []*models.LogEntry{}}
 	jsonData, _ := json.Marshal(batch)
 	
 	req := httptest.NewRequest(http.MethodPost, "/batch", bytes.NewBuffer(jsonData))
@@ -257,10 +261,10 @@ func TestBatchHandler_HandleBatch_ExceedsMaxSize(t *testing.T) {
 
 	// Create a batch that exceeds the limit
 	batch := models.LogBatch{
-		Logs: []models.LogEntry{
-			{Timestamp: 1704110400000, Message: "msg1", Source: "src1", Metadata: map[string]interface{}{"level": "INFO"}},
-			{Timestamp: 1704110401000, Message: "msg2", Source: "src2", Metadata: map[string]interface{}{"level": "INFO"}},
-			{Timestamp: 1704110402000, Message: "msg3", Source: "src3", Metadata: map[string]interface{}{"level": "INFO"}},
+		Logs: []*models.LogEntry{
+			&models.LogEntry{Timestamp: 1704110400000, Message: "msg1", Source: "src1", Metadata: map[string]interface{}{"level": "INFO"}},
+			&models.LogEntry{Timestamp: 1704110401000, Message: "msg2", Source: "src2", Metadata: map[string]interface{}{"level": "INFO"}},
+			&models.LogEntry{Timestamp: 1704110402000, Message: "msg3", Source: "src3", Metadata: map[string]interface{}{"level": "INFO"}},
 		},
 	}
 
@@ -295,8 +299,8 @@ func TestBatchHandler_HandleBatch_ValidationFailed(t *testing.T) {
 
 	// Create a batch with invalid log entry (missing timestamp)
 	batch := models.LogBatch{
-		Logs: []models.LogEntry{
-			{
+		Logs: []*models.LogEntry{
+			&models.LogEntry{
 				Message: "Test log message",
 				Source:  "test-source",
 				Metadata: map[string]interface{}{"level": "INFO"},
@@ -335,8 +339,8 @@ func TestBatchHandler_HandleBatch_StorageError(t *testing.T) {
 	handler := createTestBatchHandler(storage, 100)
 
 	batch := models.LogBatch{
-		Logs: []models.LogEntry{
-			{
+		Logs: []*models.LogEntry{
+			&models.LogEntry{
 				Timestamp: 1704110400000, // 2024-01-01T12:00:00Z
 				Message:   "Test log message",
 				Source:    "test-source",
@@ -377,10 +381,10 @@ func TestBatchHandler_HandleBatch_MultipleLogs(t *testing.T) {
 	handler := createTestBatchHandler(storage, 100)
 
 	batch := models.LogBatch{
-		Logs: []models.LogEntry{
-			{Timestamp: 1704110400000, Message: "msg1", Source: "src1", Metadata: map[string]interface{}{"level": "INFO"}},
-			{Timestamp: 1704110401000, Message: "msg2", Source: "src2", Metadata: map[string]interface{}{"level": "WARN"}},
-			{Timestamp: 1704110402000, Message: "msg3", Source: "src3", Metadata: map[string]interface{}{"level": "ERROR"}},
+		Logs: []*models.LogEntry{
+			&models.LogEntry{Timestamp: 1704110400000, Message: "msg1", Source: "src1", Metadata: map[string]interface{}{"level": "INFO"}},
+			&models.LogEntry{Timestamp: 1704110401000, Message: "msg2", Source: "src2", Metadata: map[string]interface{}{"level": "WARN"}},
+			&models.LogEntry{Timestamp: 1704110402000, Message: "msg3", Source: "src3", Metadata: map[string]interface{}{"level": "ERROR"}},
 		},
 	}
 
@@ -414,8 +418,8 @@ func TestBatchHandler_HandleBatch_WithMetadata(t *testing.T) {
 	handler := createTestBatchHandler(storage, 100)
 
 	batch := models.LogBatch{
-		Logs: []models.LogEntry{
-			{
+		Logs: []*models.LogEntry{
+			&models.LogEntry{
 				Timestamp: 1704110400000, // 2024-01-01T12:00:00Z
 				Message:   "Test log message",
 				Source:    "test-source",

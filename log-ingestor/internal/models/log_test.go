@@ -315,27 +315,27 @@ func TestLogBatchValidate(t *testing.T) {
 		{
 			name: "Valid batch with single log",
 			batch: LogBatch{
-				Logs: []LogEntry{validLogEntry},
+				Logs: []*LogEntry{&validLogEntry},
 			},
 			expectError: false,
 		},
 		{
 			name: "Valid batch with multiple logs",
 			batch: LogBatch{
-				Logs: []LogEntry{validLogEntry, validLogEntry},
+				Logs: []*LogEntry{&validLogEntry, &validLogEntry},
 			},
 			expectError: false,
 		},
 		{
 			name:        "Empty batch",
-			batch:       LogBatch{Logs: []LogEntry{}},
+			batch:       LogBatch{Logs: []*LogEntry{}},
 			expectError: true,
 			errorSubstr: "batch cannot be empty",
 		},
 		{
 			name: "Batch with invalid log entry",
 			batch: LogBatch{
-				Logs: []LogEntry{invalidLogEntry},
+				Logs: []*LogEntry{&invalidLogEntry},
 			},
 			expectError: true,
 			errorSubstr: "validation error for logs[",
@@ -343,7 +343,7 @@ func TestLogBatchValidate(t *testing.T) {
 		{
 			name: "Batch with mix of valid and invalid entries",
 			batch: LogBatch{
-				Logs: []LogEntry{validLogEntry, invalidLogEntry},
+				Logs: []*LogEntry{&validLogEntry, &invalidLogEntry},
 			},
 			expectError: true,
 			errorSubstr: "validation error for logs[",
@@ -371,7 +371,7 @@ func TestLogBatchValidate(t *testing.T) {
 func TestLogBatchSize(t *testing.T) {
 	now := time.Now().UnixMilli()
 	batch := LogBatch{
-		Logs: []LogEntry{
+		Logs: []*LogEntry{
 			{Timestamp: now, Message: "msg1", Source: "src1"},
 			{Timestamp: now + 1, Message: "msg2", Source: "src2"},
 			{Timestamp: now + 2, Message: "msg3", Source: "src3"},
@@ -384,7 +384,7 @@ func TestLogBatchSize(t *testing.T) {
 	}
 
 	// Test empty batch
-	emptyBatch := LogBatch{Logs: []LogEntry{}}
+	emptyBatch := LogBatch{Logs: []*LogEntry{}}
 	if emptyBatch.Size() != 0 {
 		t.Errorf("Expected empty batch size 0, got %d", emptyBatch.Size())
 	}
@@ -393,7 +393,7 @@ func TestLogBatchSize(t *testing.T) {
 func TestLogBatchToJSON(t *testing.T) {
 	now := time.Now().UnixMilli()
 	batch := LogBatch{
-		Logs: []LogEntry{
+		Logs: []*LogEntry{
 			{
 				Timestamp: now,
 				Message:   "Test message",

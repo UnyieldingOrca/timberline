@@ -2,388 +2,312 @@ package storage
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"github.com/timberline/log-ingestor/internal/models"
 )
 
+// MockEmbeddingService is a mock implementation of the embedding service
+type MockEmbeddingService struct {
+	mock.Mock
+}
+
+func (m *MockEmbeddingService) GetEmbeddings(ctx context.Context, texts []string) ([][]float32, error) {
+	args := m.Called(ctx, texts)
+	return args.Get(0).([][]float32), args.Error(1)
+}
+
+func (m *MockEmbeddingService) GetEmbedding(ctx context.Context, text string) ([]float32, error) {
+	args := m.Called(ctx, text)
+	return args.Get(0).([]float32), args.Error(1)
+}
+
+func (m *MockEmbeddingService) HealthCheck(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
 func TestNewMilvusClient(t *testing.T) {
 	address := "localhost:19530"
-	client := NewMilvusClient(address)
+	mockEmbedding := &MockEmbeddingService{}
+	dimension := 768
 
-	if client == nil {
-		t.Fatal("Expected client to be created, got nil")
-	}
-	if client.address != address {
-		t.Errorf("Expected address %s, got %s", address, client.address)
-	}
-	if client.collection != "logs" {
-		t.Errorf("Expected collection 'logs', got %s", client.collection)
-	}
-	if client.logger == nil {
-		t.Error("Expected logger to be initialized")
-	}
+	client := NewMilvusClient(address, mockEmbedding, dimension)
+
+	assert.NotNil(t, client)
+	assert.Equal(t, "timberline_logs", client.collection)
+	assert.Equal(t, dimension, client.embeddingDim)
+	assert.Equal(t, mockEmbedding, client.embeddingService)
+	assert.NotNil(t, client.logger)
+	assert.False(t, client.connected)
 }
 
-func TestMilvusClient_Connect(t *testing.T) {
-	client := NewMilvusClient("test:19530")
+func TestMilvusClient_StoreBatch_ValidationErrors(t *testing.T) {
+	mockEmbedding := &MockEmbeddingService{}
+	client := NewMilvusClient("test:19530", mockEmbedding, 768)
 	ctx := context.Background()
 
-	// Test successful connection
-	start := time.Now()
-	err := client.Connect(ctx)
-	duration := time.Since(start)
-
-	if err != nil {
-		t.Errorf("Expected no error, got %v", err)
-	}
-	
-	// Verify it takes approximately the expected time (100ms simulation)
-	if duration < 90*time.Millisecond || duration > 200*time.Millisecond {
-		t.Errorf("Connection took unexpected duration: %v", duration)
-	}
-}
-
-func TestMilvusClient_Connect_WithTimeout(t *testing.T) {
-	client := NewMilvusClient("test:19530")
-	
-	// Create a context with a very short timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-
-	err := client.Connect(ctx)
-	
-	if err != context.DeadlineExceeded {
-		t.Errorf("Expected context.DeadlineExceeded, got %v", err)
-	}
-}
-
-func TestMilvusClient_Connect_WithCancellation(t *testing.T) {
-	client := NewMilvusClient("test:19530")
-	
-	ctx, cancel := context.WithCancel(context.Background())
-	
-	// Cancel the context immediately
-	cancel()
-
-	err := client.Connect(ctx)
-	
-	if err != context.Canceled {
-		t.Errorf("Expected context.Canceled, got %v", err)
-	}
-}
-
-func TestMilvusClient_Close(t *testing.T) {
-	client := NewMilvusClient("test:19530")
-	
-	err := client.Close()
-	if err != nil {
-		t.Errorf("Expected no error from Close(), got %v", err)
-	}
-}
-
-func TestMilvusClient_StoreBatch_Success(t *testing.T) {
-	client := NewMilvusClient("test:19530")
-	ctx := context.Background()
-
-	batch := &models.LogBatch{
-		Logs: []models.LogEntry{
-			{
-				Timestamp: 1704110400000,
-				Message:   "Test log message",
-				
-				Source:    "test-source",
-			},
+	tests := []struct {
+		name        string
+		batch       *models.LogBatch
+		expectError string
+	}{
+		{
+			name:        "nil batch",
+			batch:       nil,
+			expectError: "batch cannot be nil",
 		},
-	}
-
-	start := time.Now()
-	err := client.StoreBatch(ctx, batch)
-	duration := time.Since(start)
-
-	if err != nil {
-		t.Errorf("Expected no error, got %v", err)
-	}
-	
-	// Verify it takes approximately the expected time (50ms simulation)
-	if duration < 40*time.Millisecond || duration > 100*time.Millisecond {
-		t.Errorf("StoreBatch took unexpected duration: %v", duration)
-	}
-}
-
-func TestMilvusClient_StoreBatch_NilBatch(t *testing.T) {
-	client := NewMilvusClient("test:19530")
-	ctx := context.Background()
-
-	err := client.StoreBatch(ctx, nil)
-	
-	if err == nil {
-		t.Error("Expected error for nil batch, got nil")
-	}
-	if err.Error() != "batch cannot be nil" {
-		t.Errorf("Expected 'batch cannot be nil' error, got '%s'", err.Error())
-	}
-}
-
-func TestMilvusClient_StoreBatch_InvalidBatch(t *testing.T) {
-	client := NewMilvusClient("test:19530")
-	ctx := context.Background()
-
-	// Create batch with invalid log entry (missing timestamp)
-	batch := &models.LogBatch{
-		Logs: []models.LogEntry{
-			{
-				Message: "Test message",
-				Source:  "test-source",
-				Metadata: map[string]interface{}{
-					"level": "INFO",
-				},
-				// Missing timestamp
+		{
+			name: "empty batch",
+			batch: &models.LogBatch{
+				Logs: []*models.LogEntry{},
 			},
+			expectError: "batch validation failed",
 		},
-	}
-
-	err := client.StoreBatch(ctx, batch)
-	
-	if err == nil {
-		t.Error("Expected validation error, got nil")
-	}
-	if !strings.Contains(err.Error(), "batch validation failed") {
-		t.Errorf("Expected validation error, got '%s'", err.Error())
-	}
-}
-
-func TestMilvusClient_StoreBatch_WithTimeout(t *testing.T) {
-	client := NewMilvusClient("test:19530")
-	
-	// Create a context with a very short timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
-	defer cancel()
-
-	batch := &models.LogBatch{
-		Logs: []models.LogEntry{
-			{
-				Timestamp: 1704110400000,
-				Message:   "Test message",
-				
-				Source:    "test-source",
-			},
-		},
-	}
-
-	err := client.StoreBatch(ctx, batch)
-	
-	if err != context.DeadlineExceeded {
-		t.Errorf("Expected context.DeadlineExceeded, got %v", err)
-	}
-}
-
-func TestMilvusClient_StoreBatch_WithCancellation(t *testing.T) {
-	client := NewMilvusClient("test:19530")
-	
-	ctx, cancel := context.WithCancel(context.Background())
-	
-	batch := &models.LogBatch{
-		Logs: []models.LogEntry{
-			{
-				Timestamp: 1704110400000,
-				Message:   "Test message",
-				
-				Source:    "test-source",
-			},
-		},
-	}
-
-	// Cancel the context immediately
-	cancel()
-
-	err := client.StoreBatch(ctx, batch)
-	
-	if err != context.Canceled {
-		t.Errorf("Expected context.Canceled, got %v", err)
-	}
-}
-
-func TestMilvusClient_StoreBatch_LargeBatch(t *testing.T) {
-	client := NewMilvusClient("test:19530")
-	ctx := context.Background()
-
-	// Create a large batch
-	logs := make([]models.LogEntry, 100)
-	for i := 0; i < 100; i++ {
-		logs[i] = models.LogEntry{
-			Timestamp: 1704110400000,
-			Message:   "Test log message",
-			
-			Source:    "test-source",
-		}
-	}
-
-	batch := &models.LogBatch{Logs: logs}
-
-	err := client.StoreBatch(ctx, batch)
-	if err != nil {
-		t.Errorf("Expected no error for large batch, got %v", err)
-	}
-}
-
-func TestMilvusClient_StoreBatch_WithMetadata(t *testing.T) {
-	client := NewMilvusClient("test:19530")
-	ctx := context.Background()
-
-	batch := &models.LogBatch{
-		Logs: []models.LogEntry{
-			{
-				Timestamp: 1704110400000,
-				Message:   "Test log message",
-				
-				Source:    "test-source",
-				Metadata: map[string]interface{}{
-					"pod_name":  "test-pod",
-					"namespace": "default",
-					"node_name": "node-1",
-					"labels": map[string]interface{}{
-						"app": "test",
+		{
+			name: "invalid log entry - missing message",
+			batch: &models.LogBatch{
+				Logs: []*models.LogEntry{
+					{
+						Timestamp: time.Now().UnixMilli(),
+						Source:    "test",
+						// Missing message
 					},
 				},
 			},
+			expectError: "batch validation failed",
 		},
 	}
 
-	err := client.StoreBatch(ctx, batch)
-	if err != nil {
-		t.Errorf("Expected no error for batch with metadata, got %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := client.StoreBatch(ctx, tt.batch)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tt.expectError)
+		})
 	}
 }
 
-func TestMilvusClient_HealthCheck_Success(t *testing.T) {
-	client := NewMilvusClient("test:19530")
-	ctx := context.Background()
-
-	start := time.Now()
-	err := client.HealthCheck(ctx)
-	duration := time.Since(start)
-
-	if err != nil {
-		t.Errorf("Expected no error, got %v", err)
-	}
+func TestMilvusClient_StoreBatch_NotConnected(t *testing.T) {
+	mockEmbedding := &MockEmbeddingService{}
+	client := NewMilvusClient("test:19530", mockEmbedding, 768)
 	
-	// Verify it takes approximately the expected time (10ms simulation)
-	if duration < 5*time.Millisecond || duration > 50*time.Millisecond {
-		t.Errorf("HealthCheck took unexpected duration: %v", duration)
+	batch := &models.LogBatch{
+		Logs: []*models.LogEntry{
+			{
+				Timestamp: time.Now().UnixMilli(),
+				Message:   "test message",
+				Source:    "test",
+				Metadata:  map[string]interface{}{"level": "INFO"},
+			},
+		},
 	}
+
+	err := client.StoreBatch(context.Background(), batch)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not connected to Milvus")
 }
 
-func TestMilvusClient_HealthCheck_WithTimeout(t *testing.T) {
-	client := NewMilvusClient("test:19530")
+func TestMilvusClient_StoreBatch_EmbeddingFailure(t *testing.T) {
+	mockEmbedding := &MockEmbeddingService{}
+	client := NewMilvusClient("test:19530", mockEmbedding, 768)
+	client.connected = true // Simulate connection
 	
-	// Create a context with a very short timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
-	defer cancel()
-
-	err := client.HealthCheck(ctx)
-	
-	if err != context.DeadlineExceeded {
-		t.Errorf("Expected context.DeadlineExceeded, got %v", err)
+	batch := &models.LogBatch{
+		Logs: []*models.LogEntry{
+			{
+				Timestamp: time.Now().UnixMilli(),
+				Message:   "test message",
+				Source:    "test",
+				Metadata:  map[string]interface{}{"level": "INFO"},
+			},
+		},
 	}
+
+	// Mock embedding service failure
+	mockEmbedding.On("GetEmbeddings", mock.Anything, []string{"test message"}).
+		Return([][]float32{}, assert.AnError)
+
+	err := client.StoreBatch(context.Background(), batch)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to get embeddings")
+
+	mockEmbedding.AssertExpectations(t)
 }
 
-func TestMilvusClient_HealthCheck_WithCancellation(t *testing.T) {
-	client := NewMilvusClient("test:19530")
+func TestMilvusClient_StoreBatch_EmbeddingCountMismatch(t *testing.T) {
+	mockEmbedding := &MockEmbeddingService{}
+	client := NewMilvusClient("test:19530", mockEmbedding, 768)
+	client.connected = true // Simulate connection
 	
-	ctx, cancel := context.WithCancel(context.Background())
-	
-	// Cancel the context immediately
-	cancel()
-
-	err := client.HealthCheck(ctx)
-	
-	if err != context.Canceled {
-		t.Errorf("Expected context.Canceled, got %v", err)
+	batch := &models.LogBatch{
+		Logs: []*models.LogEntry{
+			{
+				Timestamp: time.Now().UnixMilli(),
+				Message:   "test message 1",
+				Source:    "test",
+				Metadata:  map[string]interface{}{"level": "INFO"},
+			},
+			{
+				Timestamp: time.Now().UnixMilli(),
+				Message:   "test message 2",
+				Source:    "test",
+				Metadata:  map[string]interface{}{"level": "ERROR"},
+			},
+		},
 	}
+
+	// Mock embedding service returning wrong number of embeddings
+	mockEmbedding.On("GetEmbeddings", mock.Anything, []string{"test message 1", "test message 2"}).
+		Return([][]float32{{0.1, 0.2, 0.3}}, nil) // Only 1 embedding for 2 messages
+
+	err := client.StoreBatch(context.Background(), batch)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "embedding count mismatch")
+
+	mockEmbedding.AssertExpectations(t)
 }
 
-func TestMilvusClient_CreateCollection(t *testing.T) {
-	client := NewMilvusClient("test:19530")
-	ctx := context.Background()
+func TestMilvusClient_HealthCheck_NotConnected(t *testing.T) {
+	mockEmbedding := &MockEmbeddingService{}
+	client := NewMilvusClient("test:19530", mockEmbedding, 768)
 
-	// Since CreateCollection is not yet implemented, it should return nil
-	err := client.CreateCollection(ctx)
-	if err != nil {
-		t.Errorf("Expected no error from CreateCollection, got %v", err)
+	err := client.HealthCheck(context.Background())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not connected to Milvus")
+}
+
+func TestMilvusClient_CreateCollection_NotConnected(t *testing.T) {
+	mockEmbedding := &MockEmbeddingService{}
+	client := NewMilvusClient("test:19530", mockEmbedding, 768)
+
+	err := client.CreateCollection(context.Background())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not connected to Milvus")
+}
+
+func TestMilvusClient_LoadCollection_NotConnected(t *testing.T) {
+	mockEmbedding := &MockEmbeddingService{}
+	client := NewMilvusClient("test:19530", mockEmbedding, 768)
+
+	err := client.LoadCollection(context.Background())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not connected to Milvus")
+}
+
+func TestMilvusClient_Close(t *testing.T) {
+	mockEmbedding := &MockEmbeddingService{}
+	client := NewMilvusClient("test:19530", mockEmbedding, 768)
+
+	// Test closing when client is nil (should not error)
+	err := client.Close()
+	assert.NoError(t, err)
+}
+
+func TestMilvusClient_SchemaConstants(t *testing.T) {
+	// Test that schema constants are properly defined
+	assert.Equal(t, "id", FieldID)
+	assert.Equal(t, "timestamp", FieldTimestamp)
+	assert.Equal(t, "message", FieldMessage)
+	assert.Equal(t, "source", FieldSource)
+	assert.Equal(t, "metadata", FieldMetadata)
+	assert.Equal(t, "embedding", FieldEmbedding)
+	
+	assert.Equal(t, int32(1), DefaultShards)
+	assert.Equal(t, "IVF_FLAT", IndexType)
+	assert.Equal(t, "L2", MetricType)
+	assert.Equal(t, 1024, IndexNlist)
+}
+
+func TestLogEntry_MetadataAsJSON(t *testing.T) {
+	tests := []struct {
+		name     string
+		entry    *models.LogEntry
+		expected string
+	}{
+		{
+			name: "nil metadata",
+			entry: &models.LogEntry{
+				Timestamp: time.Now().UnixMilli(),
+				Message:   "test",
+				Source:    "test",
+				Metadata:  nil,
+			},
+			expected: "{}",
+		},
+		{
+			name: "empty metadata",
+			entry: &models.LogEntry{
+				Timestamp: time.Now().UnixMilli(),
+				Message:   "test",
+				Source:    "test",
+				Metadata:  map[string]interface{}{},
+			},
+			expected: "{}",
+		},
+		{
+			name: "with metadata",
+			entry: &models.LogEntry{
+				Timestamp: time.Now().UnixMilli(),
+				Message:   "test",
+				Source:    "test",
+				Metadata: map[string]interface{}{
+					"level":     "INFO",
+					"pod_name":  "test-pod",
+					"namespace": "default",
+				},
+			},
+			expected: `{"level":"INFO","namespace":"default","pod_name":"test-pod"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			jsonBytes, err := tt.entry.MetadataAsJSON()
+			require.NoError(t, err)
+			
+			jsonString := string(jsonBytes)
+			assert.JSONEq(t, tt.expected, jsonString)
+		})
 	}
 }
 
 func TestStorageInterface_Implementation(t *testing.T) {
-	// Verify that MilvusClient implements StorageInterface
+	// Ensure MilvusClient implements StorageInterface
 	var _ StorageInterface = (*MilvusClient)(nil)
-	
-	// This test will fail to compile if MilvusClient doesn't implement
-	// all methods required by StorageInterface
-	client := NewMilvusClient("test:19530")
-	if client == nil {
-		t.Error("Expected client to implement StorageInterface")
-	}
 }
 
-func TestMilvusClient_ConcurrentOperations(t *testing.T) {
-	client := NewMilvusClient("test:19530")
-	ctx := context.Background()
-
-	batch := &models.LogBatch{
-		Logs: []models.LogEntry{
-			{
-				Timestamp: 1704110400000,
-				Message:   "Test message",
-				
-				Source:    "test-source",
+// Integration test helper functions
+func createTestBatch(size int) *models.LogBatch {
+	logs := make([]*models.LogEntry, size)
+	for i := 0; i < size; i++ {
+		logs[i] = &models.LogEntry{
+			Timestamp: time.Now().UnixMilli(),
+			Message:   "test message " + string(rune(i)),
+			Source:    "test-source",
+			Metadata: map[string]interface{}{
+				"level":     "INFO",
+				"pod_name":  "test-pod-" + string(rune(i)),
+				"namespace": "default",
+				"index":     i,
 			},
-		},
-	}
-
-	// Test concurrent StoreBatch operations
-	concurrency := 10
-	errChan := make(chan error, concurrency)
-
-	for i := 0; i < concurrency; i++ {
-		go func() {
-			err := client.StoreBatch(ctx, batch)
-			errChan <- err
-		}()
-	}
-
-	// Collect results
-	for i := 0; i < concurrency; i++ {
-		err := <-errChan
-		if err != nil {
-			t.Errorf("Concurrent operation %d failed: %v", i, err)
 		}
 	}
+	return &models.LogBatch{Logs: logs}
 }
 
-func TestMilvusClient_DifferentLogLevels(t *testing.T) {
-	client := NewMilvusClient("test:19530")
-	ctx := context.Background()
-
-	logLevels := []string{"ERROR", "WARN", "INFO", "DEBUG", "TRACE", "error", "warn", "info", "debug", "trace"}
-
-	for _, level := range logLevels {
-		batch := &models.LogBatch{
-			Logs: []models.LogEntry{
-				{
-					Timestamp: 1704110400000,
-					Message:   "Test message for " + level,
-					
-					Source:    "test-source",
-				},
-			},
+func createMockEmbeddings(count, dimension int) [][]float32 {
+	embeddings := make([][]float32, count)
+	for i := 0; i < count; i++ {
+		embedding := make([]float32, dimension)
+		for j := 0; j < dimension; j++ {
+			embedding[j] = float32(i)*0.1 + float32(j)*0.01
 		}
-
-		err := client.StoreBatch(ctx, batch)
-		if err != nil {
-			t.Errorf("Expected no error for level %s, got %v", level, err)
-		}
+		embeddings[i] = embedding
 	}
+	return embeddings
 }

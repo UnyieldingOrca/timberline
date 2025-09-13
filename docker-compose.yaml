@@ -12,9 +12,10 @@ services:
     command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
     healthcheck:
       test: ["CMD", "etcdctl", "endpoint", "health"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+      interval: 5s
+      start_period: 5s
+      timeout: 3s
+      retries: 5
     networks:
       - timberline
 
@@ -32,9 +33,10 @@ services:
     command: minio server /minio_data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+      interval: 5s
+      start_period: 5s
+      timeout: 3s
+      retries: 5
     networks:
       - timberline
 
@@ -52,10 +54,10 @@ services:
       - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/milvus:/var/lib/milvus
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
-      interval: 30s
-      start_period: 90s
-      timeout: 20s
-      retries: 3
+      interval: 10s
+      start_period: 5s
+      timeout: 5s
+      retries: 6
     ports:
       - "19530:19530"
       - "9091:9091"
@@ -77,21 +79,21 @@ services:
       - --host
       - "0.0.0.0"
       - --port
-      - "8080"
+      - "8000"
       - --threads
       - "8"
       - --ctx-size
       - "2048"
     ports:
-      - "8000:8080"
+      - "8000:8000"
     volumes:
       - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/llama-models:/models
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
-      interval: 30s
-      start_period: 60s
-      timeout: 20s
-      retries: 3
+      test: ["CMD", "curl", "http://localhost:8000/health"]
+      interval: 5s
+      start_period: 5s
+      timeout: 3s
+      retries: 5
     networks:
       - timberline
 
@@ -116,9 +118,10 @@ services:
       - "9092:9092"
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/v1/healthz"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 5s
+      start_period: 5s
+      timeout: 3s
+      retries: 5
     depends_on:
       milvus:
         condition: service_healthy
@@ -145,9 +148,10 @@ services:
       - "9090:9090"
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/metrics"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 5s
+      start_period: 5s
+      timeout: 3s
+      retries: 5
     depends_on:
       log-ingestor:
         condition: service_healthy

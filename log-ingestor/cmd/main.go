@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 	"github.com/timberline/log-ingestor/internal/config"
+	"github.com/timberline/log-ingestor/internal/embedding"
 	"github.com/timberline/log-ingestor/internal/handlers"
 	"github.com/timberline/log-ingestor/internal/metrics"
 	"github.com/timberline/log-ingestor/internal/storage"
@@ -31,17 +32,32 @@ func main() {
 
 	logger.WithField("version", Version).Info("Starting log ingestor service")
 
+	// Initialize embedding service
+	embeddingService := embedding.NewService(cfg.EmbeddingEndpoint, cfg.EmbeddingModel, cfg.EmbeddingDimension)
+	
+	// Test embedding service connection
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := embeddingService.HealthCheck(ctx); err != nil {
+		logger.WithError(err).Warn("Embedding service health check failed, proceeding anyway")
+	}
+	cancel()
+
 	// Initialize storage
-	storageClient := storage.NewMilvusClient(cfg.MilvusAddress)
+	storageClient := storage.NewMilvusClient(cfg.MilvusAddress, embeddingService, cfg.EmbeddingDimension)
 	
 	// Connect to storage with retry
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	
 	if err := storageClient.Connect(ctx); err != nil {
 		logger.WithError(err).Fatal("Failed to connect to storage")
 	}
 	defer storageClient.Close()
+	
+	// Create collection if it doesn't exist
+	if err := storageClient.CreateCollection(ctx); err != nil {
+		logger.WithError(err).Fatal("Failed to create collection")
+	}
 
 	// Initialize handlers
 	batchHandler := handlers.NewBatchHandler(storageClient, cfg.BatchSize)

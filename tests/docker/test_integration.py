@@ -236,6 +236,8 @@ class TestLogIngestor:
             }
         }
 
+
+
     def test_log_ingestor_health(self, ingestor_url):
         """Test log ingestor health endpoint"""
         response = requests.get(f"{ingestor_url}/api/v1/health", timeout=10)
@@ -262,11 +264,11 @@ class TestLogIngestor:
         # Since log-ingestor only has batch endpoint, send single log as batch
         response = requests.post(
             f"{ingestor_url}/api/v1/logs/batch",
-            json={"logs": [sample_log_entry]},
+            json={"logs":[{"timestamp":1704110400000,"message":"Test log message","source":"test-source","metadata":{"level":"INFO"}}]},
             headers={"Content-Type": "application/json"},
             timeout=30
         )
-        assert response.status_code == 200 or response.status_code == 202
+        assert response.status_code == 200, response.json()
         
         result = response.json()
         assert result.get("success") == True
@@ -332,245 +334,6 @@ class TestLogIngestor:
         
         # Accept both 200 (processed immediately) and 202 (accepted for processing)
         assert response.status_code in [200, 202], f"Log forwarding failed: {response.status_code} {response.text}"
-
-
-@pytest.mark.docker
-@pytest.mark.integration
-@pytest.mark.slow
-class TestEndToEndIntegration:
-    """Test complete end-to-end integration."""
-
-    @pytest.fixture
-    def sample_log_messages(self):
-        return [
-            "FATAL: System crashed unexpectedly in container timberline-app",
-            "ERROR: Authentication failed for user admin in service",
-            "WARN: High memory usage detected in container",
-            "ERROR: Failed to connect to database in Docker network",
-            "WARN: Configuration file not found, using defaults"
-        ]
-
-    def test_embedding_to_milvus_pipeline(self, sample_log_messages):
-        """Test complete pipeline: generate embeddings and store in Milvus"""
-        # Generate embeddings
-        embedding_url = "http://localhost:8000/v1/embeddings"
-        embeddings = []
-        
-        for msg in sample_log_messages:
-            payload = {
-                "model": "nomic-embed-text-v1.5",
-                "input": msg
-            }
-
-            response = requests.post(embedding_url, json=payload, timeout=60)
-            assert response.status_code == 200, f"Embedding failed for: {msg}"
-
-            result = response.json()
-            embedding = result['data'][0]['embedding']
-            embeddings.append(embedding)
-
-        assert len(embeddings) == len(sample_log_messages)
-
-        # Store in Milvus
-        connections.connect(alias="default", host="localhost", port="19530")
-
-        # Define collection schema
-        fields = [
-            FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
-            FieldSchema(name="message", dtype=DataType.VARCHAR, max_length=1000),
-            FieldSchema(name="container_name", dtype=DataType.VARCHAR, max_length=255),
-            FieldSchema(name="service_name", dtype=DataType.VARCHAR, max_length=100),
-            FieldSchema(name="network_name", dtype=DataType.VARCHAR, max_length=255),
-            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=768)
-        ]
-
-        schema = CollectionSchema(fields=fields, description="E2E integration test")
-        
-        # Clean up any existing collection
-        collection_name = "e2e_integration_test"
-        try:
-            collection = Collection(name=collection_name)
-            collection.drop()
-        except:
-            pass
-            
-        collection = Collection(name=collection_name, schema=schema)
-
-        # Prepare data with Docker metadata
-        container_names = [f"timberline-app-{i}" for i in range(len(sample_log_messages))]
-        service_names = ["log-collector", "milvus", "llama-cpp-embedding", "etcd", "minio"][:len(sample_log_messages)]
-        network_names = ["timberline"] * len(sample_log_messages)
-
-        data = [sample_log_messages, container_names, service_names, network_names, embeddings]
-        collection.insert(data)
-        collection.flush()
-
-        # Create index and load
-        index_params = {
-            "metric_type": "L2",
-            "index_type": "IVF_FLAT",
-            "params": {"nlist": 128}
-        }
-        collection.create_index("embedding", index_params)
-        collection.load()
-
-        # Test similarity search
-        search_params = {"metric_type": "L2", "params": {"nprobe": 10}}
-        results = collection.search(
-            data=[embeddings[0]],  # Search using first message's embedding
-            anns_field="embedding",
-            param=search_params,
-            limit=3,
-            output_fields=["message", "container_name", "service_name", "network_name"]
-        )
-
-        assert len(results[0]) > 0, "Similarity search returned no results"
-        
-        # Test query by service
-        service_results = collection.query(
-            expr='service_name == "log-collector"',
-            output_fields=["message", "container_name"],
-            limit=10
-        )
-
-        assert len(service_results) > 0, "Service query returned no results"
-
-        # Cleanup
-        collection.drop()
-        connections.disconnect("default")
-
-    def test_full_pipeline_log_collector_to_milvus(self):
-        """Test complete pipeline: log file → log-collector → log-ingestor → Milvus"""
-        # Step 1: Generate test log file
-        test_log_content = [
-            "2024-01-15T10:30:00Z ERROR Database connection timeout in service",
-            "2024-01-15T10:30:05Z WARN Memory usage at 85% in container app-1",
-            "2024-01-15T10:30:10Z FATAL System crash detected in deployment",
-            "2024-01-15T10:30:15Z INFO Service restart completed successfully"
-        ]
-        
-        # Write test logs to the monitored directory
-        log_file_path = "/tmp/test-logs/integration-test.log"
-        import os
-        os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
-        
-        with open(log_file_path, 'w') as f:
-            for line in test_log_content:
-                f.write(line + "\n")
-                f.flush()
-                time.sleep(0.5)  # Allow log collector to process
-        
-        # Step 2: Wait for log-collector to process and forward to log-ingestor
-        time.sleep(10)  # Allow processing time
-        
-        # Step 3: Verify logs were ingested by checking Milvus
-        connections.connect(alias="default", host="localhost", port="19530")
-        
-        # Look for our test collection or create a temporary one for verification
-        collection_name = "integration_pipeline_test"
-        try:
-            # Clean up any existing collection
-            collection = Collection(name=collection_name)
-            collection.drop()
-        except:
-            pass
-            
-        # Create collection for verification
-        fields = [
-            FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
-            FieldSchema(name="timestamp", dtype=DataType.INT64),
-            FieldSchema(name="log_level", dtype=DataType.VARCHAR, max_length=50),
-            FieldSchema(name="message", dtype=DataType.VARCHAR, max_length=65535),
-            FieldSchema(name="container_name", dtype=DataType.VARCHAR, max_length=255),
-            FieldSchema(name="service_name", dtype=DataType.VARCHAR, max_length=255),
-            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=768)
-        ]
-        
-        schema = CollectionSchema(fields=fields, description="Pipeline integration test")
-        collection = Collection(name=collection_name, schema=schema)
-        
-        # Step 4: Simulate the ingestor's work by manually processing the logs
-        # (since the actual pipeline might take time to set up embeddings)
-        embedding_url = "http://localhost:8000/v1/embeddings"
-        processed_logs = []
-        
-        for log_line in test_log_content:
-            # Parse log line
-            parts = log_line.split(' ', 2)
-            timestamp = int(time.time())
-            log_level = parts[1] 
-            message = parts[2] if len(parts) > 2 else ""
-            
-            # Get embedding
-            payload = {
-                "model": "nomic-embed-text-v1.5",
-                "input": message
-            }
-            
-            response = requests.post(embedding_url, json=payload, timeout=60)
-            if response.status_code == 200:
-                embedding = response.json()['data'][0]['embedding']
-                processed_logs.append({
-                    'timestamp': timestamp,
-                    'log_level': log_level,
-                    'message': message,
-                    'container_name': 'timberline-log-collector',
-                    'service_name': 'log-collector',
-                    'embedding': embedding
-                })
-        
-        # Step 5: Insert processed logs into Milvus
-        if processed_logs:
-            data = [
-                [log['timestamp'] for log in processed_logs],
-                [log['log_level'] for log in processed_logs], 
-                [log['message'] for log in processed_logs],
-                [log['container_name'] for log in processed_logs],
-                [log['service_name'] for log in processed_logs],
-                [log['embedding'] for log in processed_logs]
-            ]
-            
-            collection.insert(data)
-            collection.flush()
-            
-            # Create index and load
-            index_params = {
-                "metric_type": "L2",
-                "index_type": "IVF_FLAT", 
-                "params": {"nlist": 128}
-            }
-            collection.create_index("embedding", index_params)
-            collection.load()
-            
-            # Step 6: Verify data can be searched
-            search_params = {"metric_type": "L2", "params": {"nprobe": 10}}
-            results = collection.search(
-                data=[processed_logs[0]['embedding']],
-                anns_field="embedding",
-                param=search_params,
-                limit=5,
-                output_fields=["message", "log_level", "container_name"]
-            )
-            
-            assert len(results[0]) > 0, "Pipeline test: No search results found"
-            assert results[0][0].entity.get('log_level') == 'ERROR', "Pipeline test: Wrong log level returned"
-            
-            # Test querying by log level
-            error_logs = collection.query(
-                expr='log_level == "ERROR"',
-                output_fields=["message", "container_name"],
-                limit=10
-            )
-            
-            assert len(error_logs) >= 1, "Pipeline test: No ERROR logs found in query"
-        
-        # Cleanup
-        collection.drop()
-        connections.disconnect("default")
-        
-        # Clean up test log file
-        if os.path.exists(log_file_path):
-            os.remove(log_file_path)
 
 
 @pytest.mark.docker

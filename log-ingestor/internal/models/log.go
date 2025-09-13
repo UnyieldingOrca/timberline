@@ -17,7 +17,7 @@ type LogEntry struct {
 
 
 type LogBatch struct {
-	Logs []LogEntry `json:"logs"`
+	Logs []*LogEntry `json:"logs"`
 }
 
 type BatchResponse struct {
@@ -109,6 +109,14 @@ func (l *LogEntry) GetStringFromMetadata(key, fallback string) string {
 	}
 	
 	return fallback
+}
+
+// MetadataAsJSON returns the metadata as JSON bytes for storage
+func (l *LogEntry) MetadataAsJSON() ([]byte, error) {
+	if l.Metadata == nil {
+		return []byte("{}"), nil
+	}
+	return json.Marshal(l.Metadata)
 }
 
 func (b *LogBatch) Validate() error {

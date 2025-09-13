@@ -16,7 +16,7 @@ help: ## Show this help message
 # Docker management
 docker-up: ## Start Docker integration environment
 	@echo "🐳 Starting Docker integration environment..."
-	./scripts/start-docker-integration-test.sh
+	./scripts/docker-compose-up.sh
 
 docker-down: ## Stop Docker integration environment
 	@echo "🐳 Stopping Docker integration environment..."
