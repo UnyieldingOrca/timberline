@@ -6,16 +6,6 @@ set -e
 echo "🐳 Starting Timberline Docker Environment"
 echo "========================================"
 
-# Check if docker compose is available
-if docker compose version &> /dev/null; then
-    COMPOSE_CMD="docker compose"
-elif command -v docker-compose &> /dev/null; then
-    COMPOSE_CMD="docker-compose"
-else
-    echo "❌ Docker Compose not available. Please install docker-compose or use Docker with Compose plugin"
-    exit 1
-fi
-
 # Download embedding model if needed
 echo "📦 Ensuring embedding model is available..."
 mkdir -p volumes/llama-models
@@ -39,6 +29,6 @@ mkdir -p test-logs
 
 # Start services using docker compose
 echo "🚀 Starting services..."
-$COMPOSE_CMD up -d --wait --build
+docker compose up -d --wait --build
 
 echo "✅ Docker environment started successfully!"

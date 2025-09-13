@@ -7,7 +7,7 @@ import json
 import os
 import time
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import List, Dict, Any
 from pathlib import Path
 
@@ -147,7 +147,7 @@ class LogGenerator:
 
         with open(log_file, 'w') as f:
             for i in range(count):
-                timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + "Z"
+                timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + "Z"
                 level = random.choice(levels)
                 service = random.choice(services)
                 random_data = ''.join(random.choices('0123456789abcdef', k=32))
@@ -177,8 +177,8 @@ class LogGenerator:
     def generate_simple_test_log(self) -> Path:
         """Generate a simple test log for basic testing."""
         log_file = self.output_dir / "application.log"
-        current_time = datetime.utcnow().strftime("%Y-%m-%d")
-        current_timestamp = datetime.utcnow().strftime("%H:%M:%S")
+        current_time = datetime.now(UTC).strftime("%Y-%m-%d")
+        current_timestamp = datetime.now(UTC).strftime("%H:%M:%S")
 
         logs = [
             f"2024-{current_time}T{current_timestamp}Z ERROR Database connection failed: timeout after 30s",

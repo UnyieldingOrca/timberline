@@ -6,14 +6,14 @@ import pytest
 import requests
 import time
 from pathlib import Path
-from pymilvus import connections, Collection, CollectionSchema, FieldSchema, DataType
+from pymilvus import connections
 from .log_generator import LogGenerator
 
 
 @pytest.fixture(scope="session")
 def test_logs_dir():
     """Provide test logs directory path."""
-    return Path("test-logs")
+    return Path(__file__).parents[2] / "volumes" / "test-logs"
 
 
 @pytest.fixture(scope="session")
@@ -130,29 +130,6 @@ def milvus_connection(milvus_host, milvus_port):
     connections.disconnect("default")
 
 
-@pytest.fixture
-def test_collection_name():
-    """Test collection name for Milvus tests."""
-    return "pytest_test_logs"
-
-
-@pytest.fixture
-def log_schema():
-    """Schema for log entries in Milvus."""
-    fields = [
-        FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
-        FieldSchema(name="timestamp", dtype=DataType.INT64),
-        FieldSchema(name="log_level", dtype=DataType.VARCHAR, max_length=50),
-        FieldSchema(name="message", dtype=DataType.VARCHAR, max_length=65535),
-        FieldSchema(name="container_name", dtype=DataType.VARCHAR, max_length=255),
-        FieldSchema(name="service_name", dtype=DataType.VARCHAR, max_length=255),
-        FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=768)  # nomic-embed dim
-    ]
-
-    return CollectionSchema(
-        fields=fields,
-        description="Timberline log entries with embeddings"
-    )
 
 
 # Helper fixtures

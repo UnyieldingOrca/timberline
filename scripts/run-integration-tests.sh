@@ -82,12 +82,9 @@ fi
 # Run the integration tests
 echo -e "${YELLOW}Running integration tests...${NC}"
 
-# Test execution options
+# Test execution options - run sequentially to avoid race conditions
 TEST_ARGS=""
-if [ "$1" = "--parallel" ]; then
-    TEST_ARGS="-n auto"
-    echo "Running tests in parallel"
-fi
+echo "Running tests sequentially"
 
 # Run tests with appropriate markers
 pytest tests/docker/ \

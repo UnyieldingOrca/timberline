@@ -20,14 +20,14 @@ docker-up: ## Start Docker integration environment
 
 docker-down: ## Stop Docker integration environment
 	@echo "🐳 Stopping Docker integration environment..."
-	docker compose down --volumes --remove-orphans
+	docker compose down
 
 docker-test: docker-up test-integration ## Start Docker services and run integration tests
 	@echo "✅ Docker integration test complete"
 
 test-integration:  ## Run Docker integration tests
 	@echo "🧪 Running Docker integration tests..."
-	./scripts/run-integration-tests.sh --parallel
+	./scripts/run-integration-tests.sh
 
 install-test-deps: ## Install Python test dependencies
 	@echo "📦 Installing Python test dependencies..."
