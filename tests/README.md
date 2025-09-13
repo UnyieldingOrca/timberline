@@ -4,22 +4,43 @@ This directory contains integration tests for the Timberline log analysis platfo
 
 ## Test Structure
 
-- `conftest.py` - pytest configuration and fixtures, including log generation setup
-- `test_integration.py` - main integration test suite
+The tests are organized by component for better maintainability:
+
+- `conftest.py` - pytest configuration and shared fixtures
 - `log_generator.py` - log data generation module
+- `test_service_health.py` - service health endpoint tests
+- `test_embedding_service.py` - llama.cpp embedding service tests
+- `test_milvus_database.py` - Milvus vector database tests
+- `test_log_ingestor.py` - log ingestor API and functionality tests
+- `test_pipeline.py` - end-to-end pipeline and data persistence tests
+- `test_metrics.py` - Prometheus metrics endpoint tests
+
+## Test Philosophy
+
+Each test file follows clean pytest patterns:
+
+- **Single-function tests** using fixtures and parameterization
+- **Proper fixtures** for setup/teardown and data generation
+- **Parameterized tests** for testing multiple scenarios
+- **Clear test names** describing what is being tested
+
+Example test structure:
+```python
+@pytest.mark.docker
+@pytest.mark.integration
+@pytest.mark.parametrize("input_value,expected", [
+    ("test1", "result1"),
+    ("test2", "result2")
+])
+def test_specific_functionality(fixture1, fixture2, input_value, expected):
+    """Test specific functionality with parameterized inputs."""
+    result = some_function(fixture1, input_value)
+    assert result == expected
+```
 
 ## Log Generation
 
-Log data is now generated programmatically within the test suite rather than by bash scripts. This provides:
-
-- Better control over test data
-- More consistent test environments
-- Ability to generate specific test scenarios
-- Integration with pytest fixtures
-
-### Using the Log Generator
-
-The log generator is available as a pytest fixture:
+Log data is generated programmatically within the test suite:
 
 ```python
 def test_my_feature(log_generator):
@@ -31,16 +52,16 @@ def test_my_feature(log_generator):
     assert response.status_code == 200
 ```
 
-### Generated Log Types
+## Shared Fixtures
 
-The system generates these types of test logs:
+Available fixtures from `conftest.py`:
 
-1. **Application Logs** (`app-errors.log`) - Standard application error messages
-2. **Structured Logs** (`structured-logs.log`) - JSON formatted logs
-3. **Kubernetes Logs** (`k8s-app.log`) - Kubernetes-style formatted logs
-4. **Mixed Format Logs** (`mixed-format.log`) - Various log formats mixed together
-5. **High Volume Logs** (`high-volume.log`) - Large number of logs for performance testing
-6. **Special Characters Logs** (`special-chars.log`) - Logs with unicode and special characters
+- `log_generator` - Log data generator instance
+- `ingestor_url` - Log ingestor service URL
+- `embedding_url` - Embedding service URL
+- `milvus_connection` - Milvus database connection
+- `sample_log_entry` - Single test log entry
+- `http_retry` - HTTP request helper with retry logic
 
 ## Running Tests
 
@@ -48,14 +69,22 @@ The system generates these types of test logs:
 # Run all integration tests
 make test-integration
 
+# Run tests by component
+pytest tests/docker/test_service_health.py -v
+pytest tests/docker/test_embedding_service.py -v
+pytest tests/docker/test_milvus_database.py -v
+pytest tests/docker/test_log_ingestor.py -v
+pytest tests/docker/test_pipeline.py -v
+pytest tests/docker/test_metrics.py -v
+
 # Run tests in parallel
 make test-integration-parallel
 
-# Run specific test classes
-pytest tests/docker/test_integration.py::TestPipelineWithGeneratedLogs -v
+# Run only slow pipeline tests
+pytest tests/docker/test_pipeline.py -v -m "docker and slow"
 
-# Run only pipeline tests (slower tests)
-pytest tests/docker/test_integration.py -v -m "docker and slow"
+# Run specific test with pattern
+pytest tests/docker/ -v -k "test_embedding"
 ```
 
 ## Test Markers
