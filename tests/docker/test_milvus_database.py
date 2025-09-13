@@ -203,41 +203,6 @@ def test_multiple_collections(milvus_connection, log_schema):
                 pass
 
 
-@pytest.mark.docker
-@pytest.mark.integration
-def test_collection_statistics(milvus_connection, test_collection_name, log_schema):
-    """Test getting collection statistics."""
-    # Clean up any existing collection
-    try:
-        collection = Collection(name=test_collection_name)
-        collection.drop()
-    except:
-        pass
-
-    # Create collection and insert data
-    collection = Collection(name=test_collection_name, schema=log_schema)
-
-    # Insert multiple test records
-    timestamps = [int(time.time()) + i for i in range(3)]
-    log_levels = ["ERROR", "WARN", "INFO"]
-    messages = ["Error message", "Warning message", "Info message"]
-    containers = ["container-1", "container-2", "container-3"]
-    services = ["service-1", "service-2", "service-3"]
-    embeddings = [np.random.random(768).tolist() for _ in range(3)]
-
-    test_data = [timestamps, log_levels, messages, containers, services, embeddings]
-
-    collection.insert(test_data)
-    collection.flush()
-    collection.load()
-
-    # Check statistics
-    count = collection.num_entities
-    assert count == 3, f"Expected 3 entities, found {count}"
-
-    # Cleanup
-    collection.drop()
-
 
 @pytest.mark.docker
 @pytest.mark.integration

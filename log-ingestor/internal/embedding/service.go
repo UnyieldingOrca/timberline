@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -17,11 +18,19 @@ type EmbeddingRequest struct {
 	Input []string `json:"input"`
 }
 
-// EmbeddingResponse represents a response from the embedding service
+// EmbeddingResponse represents a response from the embedding service (OpenAI format)
 type EmbeddingResponse struct {
 	Data  []EmbeddingData `json:"data"`
 	Model string          `json:"model"`
 	Usage Usage          `json:"usage,omitempty"`
+}
+
+// LlamaCppEmbeddingResponse represents a response from llama.cpp embedding service
+type LlamaCppEmbeddingResponse []LlamaCppEmbedding
+
+type LlamaCppEmbedding struct {
+	Index     int         `json:"index"`
+	Embedding [][]float32 `json:"embedding"`
 }
 
 // EmbeddingData represents a single embedding result
@@ -94,17 +103,47 @@ func (s *Service) GetEmbeddings(ctx context.Context, texts []string) ([][]float3
 		return nil, fmt.Errorf("embedding service returned status %d", resp.StatusCode)
 	}
 
-	var response EmbeddingResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	// Read the raw response body first
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	if len(response.Data) != len(texts) {
-		return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(response.Data))
+	// Try to decode as llama.cpp format first (array format)
+	var llamaResponse LlamaCppEmbeddingResponse
+	if err := json.Unmarshal(respBody, &llamaResponse); err == nil {
+		// Successfully decoded as llama.cpp format
+		s.logger.Debug("Decoded response as llama.cpp format")
+
+		if len(llamaResponse) != len(texts) {
+			return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(llamaResponse))
+		}
+
+		embeddings := make([][]float32, len(llamaResponse))
+		for i, data := range llamaResponse {
+			// llama.cpp returns embedding as [][]float32, but we need []float32
+			if len(data.Embedding) == 0 || len(data.Embedding[0]) != s.dimension {
+				return nil, fmt.Errorf("expected embedding dimension %d, got %d for text %d", s.dimension, len(data.Embedding[0]), i)
+			}
+			embeddings[i] = data.Embedding[0] // Take the first (and only) embedding array
+		}
+		return embeddings, nil
 	}
 
-	embeddings := make([][]float32, len(response.Data))
-	for i, data := range response.Data {
+	// Try to decode as OpenAI format
+	var openaiResponse EmbeddingResponse
+	if err := json.Unmarshal(respBody, &openaiResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode response in both llama.cpp and OpenAI formats: %w", err)
+	}
+
+	s.logger.Debug("Decoded response as OpenAI format")
+
+	if len(openaiResponse.Data) != len(texts) {
+		return nil, fmt.Errorf("expected %d embeddings, got %d", len(texts), len(openaiResponse.Data))
+	}
+
+	embeddings := make([][]float32, len(openaiResponse.Data))
+	for i, data := range openaiResponse.Data {
 		if len(data.Embedding) != s.dimension {
 			return nil, fmt.Errorf("expected embedding dimension %d, got %d for text %d", s.dimension, len(data.Embedding), i)
 		}
@@ -114,7 +153,6 @@ func (s *Service) GetEmbeddings(ctx context.Context, texts []string) ([][]float3
 	s.logger.WithFields(logrus.Fields{
 		"text_count":    len(texts),
 		"embedding_dim": s.dimension,
-		"usage":         response.Usage,
 	}).Debug("Successfully retrieved embeddings")
 
 	return embeddings, nil

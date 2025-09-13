@@ -25,33 +25,9 @@ docker-down: ## Stop Docker integration environment
 docker-test: docker-up test-integration ## Start Docker services and run integration tests
 	@echo "✅ Docker integration test complete"
 
-docker-logs: ## Show Docker service logs
-	@if command -v docker compose &> /dev/null; then \
-		docker compose logs; \
-	else \
-		docker-compose logs; \
-	fi
-
-docker-status: ## Show Docker service status
-	@if command -v docker compose &> /dev/null; then \
-		docker compose ps; \
-	else \
-		docker-compose ps; \
-	fi
-
-test-integration: install-test-deps ## Run Docker integration tests
+test-integration:  ## Run Docker integration tests
 	@echo "🧪 Running Docker integration tests..."
-	./scripts/run-integration-tests.sh
-
-test-integration-parallel: install-test-deps ## Run Docker integration tests in parallel
-	@echo "🧪 Running Docker integration tests in parallel..."
 	./scripts/run-integration-tests.sh --parallel
-
-test-pipeline: docker-up ## Test complete log pipeline (collector → ingestor → Milvus)
-	@echo "🧪 Testing complete log processing pipeline..."
-	./scripts/run-integration-tests.sh
-	@echo "✅ Pipeline tests complete"
-
 
 install-test-deps: ## Install Python test dependencies
 	@echo "📦 Installing Python test dependencies..."
