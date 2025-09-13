@@ -783,3 +783,113 @@ func TestCollector_Integration_FileWatching(t *testing.T) {
 	// but we verify no errors occurred
 	mockForwarder.AssertExpectations(t)
 }
+
+func TestCollector_HandleFileDeletion(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "delete_test.log")
+
+	// Create initial log file
+	initialContent := "initial log line\n"
+	err := os.WriteFile(logFile, []byte(initialContent), 0644)
+	require.NoError(t, err)
+
+	cfg := config.CollectorConfig{
+		LogPaths:      []string{filepath.Join(tmpDir, "*.log")},
+		BufferSize:    10,
+		FlushInterval: 50 * time.Millisecond,
+	}
+
+	mockForwarder := &MockForwarder{}
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel) // Reduce noise in test
+
+	collector, err := New(cfg, mockForwarder, logger)
+	require.NoError(t, err)
+
+	// Setup mock to accept any Forward calls
+	mockForwarder.On("Forward", mock.AnythingOfType("[]*models.LogEntry")).Return(nil).Maybe()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	// Start collector in a goroutine
+	go func() {
+		_ = collector.Start(ctx)
+	}()
+
+	// Give collector time to discover and start tailing the file
+	time.Sleep(200 * time.Millisecond)
+
+	// Verify file is being tailed
+	collector.mu.RLock()
+	_, isBeingTailed := collector.tailFiles[logFile]
+	collector.mu.RUnlock()
+	assert.True(t, isBeingTailed, "File should be tailed initially")
+
+	// Delete the file
+	err = os.Remove(logFile)
+	require.NoError(t, err)
+
+	// Give time for deletion to be detected and processed
+	time.Sleep(400 * time.Millisecond)
+
+	// Verify file is no longer being tailed
+	collector.mu.RLock()
+	_, stillBeingTailed := collector.tailFiles[logFile]
+	collector.mu.RUnlock()
+	assert.False(t, stillBeingTailed, "File should no longer be tailed after deletion")
+
+	// Stop collector
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer stopCancel()
+
+	err = collector.Stop(stopCtx)
+	assert.NoError(t, err)
+
+	mockForwarder.AssertExpectations(t)
+}
+
+func TestCollector_CleanupTailFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "cleanup_test.log")
+
+	// Create test file
+	err := os.WriteFile(logFile, []byte("test content\n"), 0644)
+	require.NoError(t, err)
+
+	cfg := config.CollectorConfig{BufferSize: 10}
+	mockForwarder := &MockForwarder{}
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+
+	collector, err := New(cfg, mockForwarder, logger)
+	require.NoError(t, err)
+
+	// Start tailing the file
+	err = collector.startTailing(logFile)
+	require.NoError(t, err)
+
+	// Verify file is in tailFiles
+	collector.mu.RLock()
+	_, exists := collector.tailFiles[logFile]
+	collector.mu.RUnlock()
+	assert.True(t, exists, "File should be in tailFiles")
+
+	// Cleanup the file
+	collector.cleanupTailFile(logFile)
+
+	// Verify file is removed from tailFiles
+	collector.mu.RLock()
+	_, exists = collector.tailFiles[logFile]
+	collector.mu.RUnlock()
+	assert.False(t, exists, "File should be removed from tailFiles after cleanup")
+
+	// Cleanup again should be safe (no-op)
+	collector.cleanupTailFile(logFile)
+
+	// Verify still not in tailFiles
+	collector.mu.RLock()
+	_, exists = collector.tailFiles[logFile]
+	collector.mu.RUnlock()
+	assert.False(t, exists, "File should still be removed from tailFiles")
+}

@@ -200,6 +200,12 @@ func (c *Collector) tailFile(tf *TailFile) {
 			return
 		case <-ticker.C:
 			if err := c.readNewLines(tf); err != nil {
+				// Check if file was deleted or closed
+				if os.IsNotExist(err) || strings.Contains(err.Error(), "file deleted") || strings.Contains(err.Error(), "file already closed") {
+					c.logger.WithField("path", tf.path).Info("File deleted or closed, cleaning up tail")
+					c.cleanupTailFile(tf.path)
+					return
+				}
 				c.logger.WithError(err).WithField("path", tf.path).Error("Error reading file")
 			}
 		}
@@ -210,6 +216,11 @@ func (c *Collector) tailFile(tf *TailFile) {
 func (c *Collector) readNewLines(tf *TailFile) error {
 	stat, err := tf.file.Stat()
 	if err != nil {
+		// Check if the file was deleted or file handle is closed
+		if os.IsNotExist(err) || strings.Contains(err.Error(), "file already closed") {
+			c.logger.WithField("path", tf.path).Info("File was deleted or closed, stopping tail")
+			return fmt.Errorf("file deleted: %w", err)
+		}
 		return err
 	}
 
@@ -472,6 +483,17 @@ func (c *Collector) watchFiles(ctx context.Context) {
 				}
 			}
 
+			if event.Op&fsnotify.Remove == fsnotify.Remove {
+				// File was deleted, clean up if we're tailing it
+				c.mu.RLock()
+				_, exists := c.tailFiles[event.Name]
+				c.mu.RUnlock()
+				if exists {
+					c.logger.WithField("path", event.Name).Info("File deleted, cleaning up tail")
+					c.cleanupTailFile(event.Name)
+				}
+			}
+
 		case err, ok := <-c.watcher.Errors:
 			if !ok {
 				return
@@ -479,4 +501,24 @@ func (c *Collector) watchFiles(ctx context.Context) {
 			c.logger.WithError(err).Error("File watcher error")
 		}
 	}
+}
+
+// cleanupTailFile removes a tail file from tracking and closes the file handle
+func (c *Collector) cleanupTailFile(path string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	tf, exists := c.tailFiles[path]
+	if !exists {
+		return
+	}
+
+	if tf.file != nil {
+		if err := tf.file.Close(); err != nil {
+			c.logger.WithError(err).WithField("path", path).Error("Error closing deleted file")
+		}
+	}
+
+	delete(c.tailFiles, path)
+	c.logger.WithField("path", path).Debug("Cleaned up tail file")
 }
