@@ -9,8 +9,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml .
+RUN pip install --no-cache-dir .
 
 # Copy application code
 COPY analyzer/ ./analyzer/
@@ -20,4 +20,4 @@ COPY config/ ./config/
 RUN useradd -m -u 1000 analyzer
 USER analyzer
 
-CMD ["python", "-m", "analyzer.cli", "analyze-daily"]
+CMD ["ai-analyzer", "analyze-daily"]
