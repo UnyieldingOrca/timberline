@@ -1,53 +1,42 @@
-# AI Log Analyzer - Component Specification
+# AI Log Analyzer - Component Specification (MVP)
 
 ## Overview
 
-The AI Log Analyzer is a Python-based service that performs intelligent analysis of logs stored in the Milvus vector database to identify concerning, anomalous, and actionable log patterns. It runs on a daily cadence to provide proactive insights for system health and operational improvements.
+The AI Log Analyzer is a Python-based service that performs LLM-powered analysis of logs stored in the Milvus vector database to identify concerning, anomalous, and actionable log patterns. It runs as a daily Kubernetes CronJob to provide proactive insights for system health and operational improvements.
 
 ## Architecture
 
 ### Component Type
 - **Language**: Python 3.11+
-- **Deployment**: Kubernetes CronJob (daily scheduled) + Service (on-demand analysis)
-- **Dependencies**: Milvus, llama.cpp embedding service, optional LLM endpoint
+- **CronJob**: Kubernetes CronJob (daily scheduled only)
+- **Dependencies**: Milvus, LLM endpoint (local llama.cpp or cloud provider)
 
 ### Resource Requirements
-- **Memory**: 2-4 GiB (depending on analysis window size)
+- **Memory**: 2-4 GiB (for LLM context processing)
 - **CPU**: 1-2 cores
-- **Storage**: 1 GiB for temporary analysis data and reports
-- **GPU**: Optional (for local LLM inference)
+- **Storage**: 512 MiB for reports and temporary data
+- **GPU**: Optional (recommended for local LLM inference)
 
 ## Core Responsibilities
 
 ### 1. Daily Log Analysis Pipeline
 - Query last 24 hours of logs from Milvus vector database
-- Perform statistical anomaly detection
-- Execute semantic similarity analysis for pattern recognition
-- Generate severity scores for identified issues
-- Create actionable reports with recommendations
-
-### 2. Real-time Analysis API
-- On-demand analysis for specific time ranges
-- Immediate analysis of critical log patterns
-- Health check and metrics endpoints
-
-### 3. Report Generation & Notifications
-- Generate structured analysis reports
-- Send alerts for critical findings
-- Maintain historical analysis trends
-- Export reports in multiple formats (JSON, HTML, Slack)
+- Group similar logs using vector clustering
+- Send log samples to LLM for analysis and severity ranking
+- Generate structured reports with LLM-powered insights
+- Output reports to file system or single webhook endpoint
 
 ## Data Flow
 
 ```
 ┌─────────────┐    ┌──────────────┐    ┌─────────────────┐
-│   Milvus    │───▶│ AI Analyzer  │───▶│ Analysis Reports│
-│  (Logs DB)  │    │   Service    │    │ & Notifications │
+│   Milvus    │───▶│ AI Analyzer  │───▶│ JSON Reports &  │
+│  (Logs DB)  │    │   CronJob    │    │ Notifications   │
 └─────────────┘    └──────────────┘    └─────────────────┘
                            │
                     ┌──────▼──────┐
                     │ LLM Service │
-                    │ (Optional)  │
+                    │ (Required)  │
                     └─────────────┘
 ```
 
@@ -55,84 +44,69 @@ The AI Log Analyzer is a Python-based service that performs intelligent analysis
 
 ### 1. Milvus Query Engine (`analyzer/storage/milvus_client.py`)
 
-**Purpose**: Interface with Milvus for log retrieval and semantic search
+**Purpose**: Interface with Milvus for log retrieval and clustering
 
 **Key Features**:
 - Time-range queries for daily analysis windows
-- Semantic similarity search for pattern detection
-- Anomaly detection using vector distance metrics
+- Log clustering using vector similarity
 - Batch processing for large log volumes
 
 **Core Methods**:
 ```python
 class MilvusQueryEngine:
     def query_time_range(self, start_time: datetime, end_time: datetime) -> List[LogRecord]
-    def search_similar_logs(self, query_embedding: List[float], limit: int = 100) -> List[LogRecord]
-    def detect_anomalous_patterns(self, time_window: timedelta) -> List[AnomalyResult]
+    def cluster_similar_logs(self, logs: List[LogRecord]) -> List[LogCluster]
     def get_log_statistics(self, time_range: tuple) -> LogStatistics
 ```
 
-### 2. Analysis Engine (`analyzer/analysis/engine.py`)
+### 2. LLM Integration (`analyzer/llm/client.py`)
 
-**Purpose**: Core analysis logic for identifying concerning log patterns
+**Purpose**: Core LLM integration for log analysis and severity ranking
 
-**Analysis Capabilities**:
-- **Statistical Anomaly Detection**: Identify logs with unusual frequency, timing, or patterns
-- **Severity Classification**: Assign criticality scores (1-10) to log entries and patterns
-- **Pattern Recognition**: Group similar errors and identify recurring issues
-- **Trend Analysis**: Compare current patterns with historical baselines
-- **Service Health Assessment**: Per-service and system-wide health scoring
+**Capabilities**:
+- Severity scoring (1-10 scale) for log patterns
+- Natural language interpretation of error clusters
+- Human-readable summaries and insights
+
+**Supported LLM Providers**:
+- **Local**: llama.cpp, Ollama
+- **Cloud**: OpenAI GPT-4, Anthropic Claude
+
+**Integration Pattern**:
+```python
+class LLMClient:
+    def analyze_log_batch(self, logs: List[LogRecord]) -> List[AnalyzedLog]
+    def rank_severity(self, log_clusters: List[LogCluster]) -> List[SeverityScore]
+    def generate_daily_summary(self, analysis: AnalysisResult) -> str
+```
+
+### 3. Analysis Engine (`analyzer/analysis/engine.py`)
+
+**Purpose**: Orchestrate the daily analysis pipeline
 
 **Analysis Pipeline**:
 ```python
 class AnalysisEngine:
     def analyze_daily_logs(self, analysis_date: date) -> DailyAnalysisResult
-    def detect_anomalies(self, logs: List[LogRecord]) -> List[Anomaly]
-    def classify_severity(self, logs: List[LogRecord]) -> List[SeverityClassification]
-    def identify_actionable_items(self, logs: List[LogRecord]) -> List[ActionableItem]
-    def generate_insights(self, analysis_results: AnalysisResult) -> List[Insight]
-```
-
-### 3. LLM Integration (`analyzer/llm/client.py`)
-
-**Purpose**: Optional integration with Large Language Models for advanced analysis
-
-**Capabilities**:
-- Natural language interpretation of complex error patterns
-- Root cause analysis suggestions
-- Human-readable report generation
-- Contextual recommendations
-
-**Supported LLM Providers**:
-- **Local**: llama.cpp, Ollama
-- **Cloud**: OpenAI GPT-4, Anthropic Claude, Azure OpenAI
-- **Self-hosted**: vLLM, TGI (Text Generation Inference)
-
-**Integration Pattern**:
-```python
-class LLMClient:
-    def analyze_log_pattern(self, pattern: LogPattern) -> AnalysisInsight
-    def generate_root_cause_analysis(self, error_cluster: List[LogRecord]) -> RootCauseAnalysis
-    def create_human_readable_summary(self, analysis: AnalysisResult) -> str
-    def suggest_actions(self, anomalies: List[Anomaly]) -> List[ActionSuggestion]
+    def process_log_clusters(self, clusters: List[LogCluster]) -> List[AnalyzedCluster]
+    def generate_health_score(self, analysis: AnalysisResult) -> float
 ```
 
 ### 4. Report Generator (`analyzer/reporting/generator.py`)
 
-**Purpose**: Generate structured reports and notifications
+**Purpose**: Generate JSON reports and send notifications
 
-**Report Types**:
-- **Daily Summary**: High-level health overview with key metrics
-- **Critical Issues**: Immediate attention items with severity scores
-- **Trend Analysis**: Week/month comparisons and patterns
-- **Service Health**: Per-service breakdown and recommendations
-- **Actionable Items**: Prioritized list with suggested actions
+**Output**:
+- JSON structured reports
+- Optional webhook notifications
 
-**Output Formats**:
-- JSON (structured data for APIs)
-- HTML (human-readable dashboards)
-- Markdown (documentation integration)
-- Slack/Teams (notification integrations)
+**Core Methods**:
+```python
+class ReportGenerator:
+    def generate_daily_report(self, analysis: DailyAnalysisResult) -> Dict
+    def save_report(self, report: Dict, filepath: str) -> None
+    def send_webhook_notification(self, report: Dict, webhook_url: str) -> None
+```
 
 ## Configuration
 
@@ -146,63 +120,31 @@ MILVUS_COLLECTION=timberline_logs
 
 # Analysis Settings
 ANALYSIS_WINDOW_HOURS=24
-ANOMALY_THRESHOLD=2.0
-SEVERITY_THRESHOLD=7
-MAX_LOGS_PER_ANALYSIS=50000
+MAX_LOGS_PER_ANALYSIS=10000
+CLUSTER_BATCH_SIZE=50
 
-# LLM Configuration (Optional)
-LLM_PROVIDER=openai|anthropic|local|none
+# LLM Configuration (Required)
+LLM_PROVIDER=openai|anthropic|local
 LLM_ENDPOINT=http://localhost:8000/v1
-LLM_MODEL=gpt-4|claude-3|llama-3.1-8b
+LLM_MODEL=gpt-4o-mini|claude-3-haiku|llama-3.1-8b
 LLM_API_KEY=secret_key
 
 # Reporting
 REPORT_OUTPUT_DIR=/app/reports
-NOTIFICATION_WEBHOOK_URL=https://hooks.slack.com/...
-SMTP_SERVER=smtp.company.com
-ALERT_EMAIL=ops-team@company.com
-
-# Scheduling
-CRON_SCHEDULE=0 6 * * *  # Daily at 6 AM
-TIMEZONE=UTC
+WEBHOOK_URL=https://hooks.slack.com/...
 ```
 
-## API Endpoints
+## CLI Interface
 
-### REST API Service
+The AI Analyzer runs as a CronJob and provides a simple CLI interface:
 
-```
-# Health and Status
-GET  /api/v1/health              # Service health check
-GET  /api/v1/status              # Analysis status and metrics
+```bash
+# Main analysis command (used in CronJob)
+python -m analyzer.cli analyze-daily
 
-# Analysis Operations
-POST /api/v1/analyze/on-demand   # Trigger immediate analysis
-GET  /api/v1/analyze/latest      # Get latest analysis results
-GET  /api/v1/analyze/history     # Get historical analysis results
-
-# Reports
-GET  /api/v1/reports/daily/{date}    # Get daily report
-GET  /api/v1/reports/summary         # Get current summary
-POST /api/v1/reports/export          # Export report in specified format
-
-# Configuration
-GET  /api/v1/config              # Get current configuration
-PUT  /api/v1/config              # Update configuration
-
-# Metrics
-GET  /api/v1/metrics             # Prometheus metrics endpoint
-```
-
-### Webhook Notifications
-
-```
-# Slack Integration
-POST /webhook/slack/critical     # Send critical alerts to Slack
-POST /webhook/slack/daily        # Send daily summary to Slack
-
-# Generic Webhooks
-POST /webhook/generic/{endpoint} # Send notifications to configured endpoints
+# Optional manual execution
+python -m analyzer.cli analyze-date --date=2024-01-15
+python -m analyzer.cli health-check
 ```
 
 ## Data Models
@@ -221,93 +163,55 @@ class LogRecord:
     level: str
 
 @dataclass
-class Anomaly:
-    id: str
-    type: str  # 'statistical', 'semantic', 'frequency'
-    severity: int  # 1-10 scale
-    description: str
-    affected_logs: List[int]  # Log IDs
-    confidence: float  # 0.0-1.0
-    first_seen: datetime
-    last_seen: datetime
-    similar_patterns: List[str]
+class LogCluster:
+    representative_log: LogRecord
+    similar_logs: List[LogRecord]
+    count: int
+    severity_score: Optional[int] = None  # Set by LLM
 
 @dataclass
-class ActionableItem:
-    id: str
-    title: str
-    description: str
-    severity: int
-    category: str  # 'performance', 'error', 'security', 'infrastructure'
-    suggested_actions: List[str]
-    affected_services: List[str]
-    estimated_impact: str  # 'low', 'medium', 'high', 'critical'
-    time_to_resolve: str  # 'immediate', 'hours', 'days'
+class AnalyzedLog:
+    log: LogRecord
+    severity: int  # 1-10 scale from LLM
+    reasoning: str
+    category: str  # 'error', 'warning', 'info', 'performance'
 
 @dataclass
 class DailyAnalysisResult:
     analysis_date: date
     total_logs_processed: int
-    anomalies_detected: List[Anomaly]
-    actionable_items: List[ActionableItem]
-    service_health_scores: Dict[str, float]
-    overall_health_score: float
-    trends: Dict[str, Any]
+    error_count: int
+    warning_count: int
+    analyzed_clusters: List[LogCluster]
+    top_issues: List[AnalyzedLog]  # Top 10 by severity
+    health_score: float  # 0-1 scale
+    llm_summary: str
     execution_time: float
 ```
 
-## Analysis Algorithms
+## Analysis Pipeline
 
-### 1. Statistical Anomaly Detection
-
-**Z-Score Analysis**: Identify logs with unusual frequency patterns
-```python
-def detect_frequency_anomalies(logs: List[LogRecord], window: timedelta) -> List[Anomaly]:
-    # Group logs by time buckets and calculate z-scores for frequencies
-    # Flag buckets with z-score > threshold as anomalies
-```
-
-**Isolation Forest**: Detect outliers in log embedding space
-```python
-def detect_embedding_anomalies(embeddings: List[List[float]]) -> List[Anomaly]:
-    # Use isolation forest to identify logs with unusual embedding patterns
-    # Useful for finding completely new types of errors
-```
-
-### 2. Semantic Pattern Recognition
-
-**Clustering Analysis**: Group similar error messages
+### 1. Log Clustering
 ```python
 def cluster_similar_logs(logs: List[LogRecord]) -> List[LogCluster]:
-    # Use DBSCAN or K-means clustering on embeddings
-    # Identify recurring error patterns and their frequencies
+    # Use vector similarity clustering on embeddings
+    # Group similar log messages together
+    # Select representative log for each cluster
 ```
 
-**Temporal Pattern Analysis**: Identify time-based patterns
+### 2. LLM-Based Analysis
 ```python
-def analyze_temporal_patterns(logs: List[LogRecord]) -> List[TemporalPattern]:
-    # Find patterns that occur at specific times or intervals
-    # Useful for identifying scheduled job failures or peak hour issues
+def analyze_with_llm(clusters: List[LogCluster]) -> List[AnalyzedLog]:
+    # Send representative logs to LLM for analysis
+    # Get severity scores (1-10) and reasoning
+    # Categorize issues by type
 ```
 
-### 3. Severity Scoring
-
-**Multi-factor Severity Assessment**:
-- **Log Level**: ERROR > WARN > INFO weight
-- **Message Content**: Keywords like "critical", "fatal", "timeout"
-- **Frequency**: Repeated errors get higher scores
-- **Service Impact**: Core services weighted higher
-- **Time Context**: Recent errors weighted higher
-
+### 3. Health Score Calculation
 ```python
-def calculate_severity_score(log: LogRecord, context: AnalysisContext) -> int:
-    score = 0
-    score += log_level_weight(log.level)
-    score += keyword_analysis(log.message)
-    score += frequency_multiplier(log, context)
-    score += service_criticality(log.source)
-    score += temporal_relevance(log.timestamp)
-    return min(10, score)  # Cap at 10
+def calculate_health_score(analysis: DailyAnalysisResult) -> float:
+    # Simple formula based on error/warning counts and severity scores
+    # Returns 0-1 score (1 = healthy, 0 = critical issues)
 ```
 
 ## Deployment
@@ -333,37 +237,20 @@ spec:
             env:
             - name: MILVUS_HOST
               value: "milvus"
+            - name: LLM_PROVIDER
+              value: "openai"
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-credentials
+                  key: api-key
             resources:
               requests:
+                memory: "1Gi"
+                cpu: "500m"
+              limits:
                 memory: "2Gi"
                 cpu: "1000m"
-              limits:
-                memory: "4Gi"
-                cpu: "2000m"
-```
-
-**Service for On-Demand Analysis**:
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: ai-analyzer-service
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: ai-analyzer-service
-  template:
-    metadata:
-      labels:
-        app: ai-analyzer-service
-    spec:
-      containers:
-      - name: ai-analyzer
-        image: timberline/ai-analyzer:latest
-        command: ["python", "-m", "analyzer.server"]
-        ports:
-        - containerPort: 8080
 ```
 
 ### Docker Configuration
@@ -409,80 +296,51 @@ scikit-learn>=1.3.0
 # Vector Database
 pymilvus>=2.6.0
 
-# ML/AI
-sentence-transformers>=2.5.0
-transformers>=4.30.0
-torch>=2.0.0
-
-# API Framework
-fastapi>=0.100.0
-uvicorn>=0.23.0
-pydantic>=2.0.0
+# LLM Integrations
+openai>=1.0.0
+anthropic>=0.3.0
 
 # Configuration
-pyyaml>=6.0
 python-dotenv>=1.0.0
 
 # Utilities
 loguru>=0.7.0
 httpx>=0.24.0
-jinja2>=3.1.0
-
-# Optional LLM Integrations
-openai>=1.0.0
-anthropic>=0.3.0
+click>=8.0.0  # CLI framework
 ```
 
 ## Monitoring & Observability
 
-### Metrics Exposed
+### Basic Metrics
 - `analyzer_logs_processed_total`: Total logs analyzed
-- `analyzer_anomalies_detected_total`: Anomalies found
 - `analyzer_analysis_duration_seconds`: Analysis execution time
-- `analyzer_service_health_scores`: Health scores by service
-- `analyzer_llm_requests_total`: LLM API requests (if enabled)
+- `analyzer_health_score`: Latest calculated health score
+- `analyzer_llm_requests_total`: LLM API requests
 
 ### Logging Strategy
-- Structured logging with correlation IDs
-- Log analysis execution details
-- Performance metrics and timing
+- Structured logging for analysis execution
 - Error tracking and debugging information
+- LLM request/response logging (without sensitive data)
 
 ### Health Checks
-- Milvus connectivity
-- LLM service availability (if configured)
-- Recent analysis execution status
-- Resource utilization monitoring
+- Milvus connectivity test
+- LLM service availability test
+- Basic resource utilization check
 
-## Security Considerations
+## Security Considerations (MVP Scope)
 
 ### Data Privacy
 - No log content stored locally beyond analysis session
-- Optional log anonymization before LLM processing
-- Configurable PII detection and redaction
-
-### API Security
-- JWT authentication for API endpoints
-- Rate limiting for on-demand analysis
-- RBAC for configuration changes
+- LLM requests sanitized to remove obvious PII
 
 ### LLM Security
-- API key management through secrets
+- API key management through Kubernetes secrets
 - Request sanitization and validation
-- Local LLM option for sensitive environments
 
-## Future Enhancements
+## Future Enhancements (Post-MVP)
 
-### Planned Features
-1. **Machine Learning Models**: Custom anomaly detection models
-2. **Real-time Streaming**: Process logs as they arrive
-3. **Dashboard Integration**: Web UI for reports and configuration
-4. **Multi-tenant Support**: Analyze logs from multiple clusters
-5. **Advanced Alerting**: Smart alert routing and escalation
-6. **Historical Trending**: Long-term pattern analysis and predictions
-
-### Integration Opportunities
-- **Kubernetes Events**: Correlate log anomalies with K8s events
-- **Metrics**: Combine log analysis with Prometheus metrics
-- **Tracing**: Integration with distributed tracing systems
-- **CI/CD**: Automated analysis in deployment pipelines
+1. **Real-time Analysis**: Process logs as they arrive
+2. **Web Dashboard**: UI for reports and configuration
+3. **Advanced PII Detection**: Comprehensive data anonymization
+4. **Custom ML Models**: Tailored anomaly detection
+5. **Historical Trending**: Long-term pattern analysis
