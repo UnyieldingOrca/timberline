@@ -1,61 +1,114 @@
 from datetime import date, datetime, timedelta
-from typing import List
+from typing import List, Optional
 from loguru import logger
 import time
 
-from ..models.log import DailyAnalysisResult, LogCluster, AnalyzedLog
-from ..storage.milvus_client import MilvusQueryEngine
+from ..models.log import DailyAnalysisResult, LogCluster, AnalyzedLog, LogRecord
+from ..storage.milvus_client import MilvusQueryEngine, MilvusConnectionError
 from ..llm.client import LLMClient
-from ..reporting.generator import ReportGenerator
+from ..reporting.generator import ReportGenerator, ReportGeneratorError
 from ..config.settings import Settings
 
 
+class AnalysisEngineError(Exception):
+    """Base exception for analysis engine errors"""
+    pass
+
+
 class AnalysisEngine:
+    """Orchestrates the complete daily log analysis pipeline"""
+
     def __init__(self, settings: Settings):
         self.settings = settings
-        settings.validate()
+
+        try:
+            settings.validate()
+        except Exception as e:
+            raise AnalysisEngineError(f"Invalid settings: {e}")
 
         # Initialize components
-        self.milvus_client = MilvusQueryEngine(settings)
-        self.llm_client = LLMClient(settings)
-        self.report_generator = ReportGenerator(settings)
+        try:
+            self.milvus_client = MilvusQueryEngine(settings)
+            self.llm_client = LLMClient(settings)
+            self.report_generator = ReportGenerator(settings)
+            logger.info("Analysis engine initialized successfully")
+        except Exception as e:
+            raise AnalysisEngineError(f"Failed to initialize analysis engine: {e}")
 
-        logger.info("Analysis engine initialized")
+    def health_check(self) -> dict:
+        """Check health of all components"""
+        health_status = {
+            "milvus": False,
+            "llm": False,
+            "report_generator": True,  # No external dependencies
+            "overall": False
+        }
+
+        try:
+            health_status["milvus"] = self.milvus_client.health_check()
+        except Exception as e:
+            logger.error(f"Milvus health check failed: {e}")
+
+        try:
+            health_status["llm"] = self.llm_client.health_check()
+        except Exception as e:
+            logger.error(f"LLM health check failed: {e}")
+
+        health_status["overall"] = all([
+            health_status["milvus"],
+            health_status["llm"],
+            health_status["report_generator"]
+        ])
+
+        logger.info(f"Health check results: {health_status}")
+        return health_status
 
     def analyze_daily_logs(self, analysis_date: date) -> DailyAnalysisResult:
         """Orchestrate the daily analysis pipeline"""
+        if not isinstance(analysis_date, date):
+            raise AnalysisEngineError("analysis_date must be a date object")
+
         start_time = time.time()
         logger.info(f"Starting daily analysis for {analysis_date}")
 
-        # Calculate time range (24 hours ending at the analysis date)
+        # Calculate time range (analysis window ending at the analysis date)
         end_datetime = datetime.combine(analysis_date, datetime.min.time()) + timedelta(days=1)
         start_datetime = end_datetime - timedelta(hours=self.settings.analysis_window_hours)
+
+        logger.info(f"Analysis window: {start_datetime} to {end_datetime}")
 
         try:
             # Step 1: Query logs from Milvus
             logger.info("Step 1: Querying logs from Milvus")
-            logs = self.milvus_client.query_time_range(start_datetime, end_datetime)
+            logs = self._query_logs_with_retry(start_datetime, end_datetime)
+
+            if not logs:
+                logger.warning("No logs found in the specified time range")
+                return self._create_empty_result(analysis_date, time.time() - start_time)
 
             # Step 2: Cluster similar logs
-            logger.info("Step 2: Clustering similar logs")
+            logger.info(f"Step 2: Clustering {len(logs)} logs")
             clusters = self.milvus_client.cluster_similar_logs(logs)
+            logger.info(f"Created {len(clusters)} clusters")
 
             # Step 3: LLM analysis
             logger.info("Step 3: Running LLM analysis")
             analyzed_clusters = self.process_log_clusters(clusters)
 
-            # Step 4: Generate health score
-            logger.info("Step 4: Calculating health score")
-            health_score = self.generate_health_score(logs, analyzed_clusters)
-
-            # Step 5: Create top issues list
-            top_issues = self.get_top_issues(analyzed_clusters)
-
-            # Step 6: Generate LLM summary
-            error_count = len([log for log in logs if log.level == "ERROR"])
+            # Step 4: Calculate statistics
+            error_count = len([log for log in logs if log.level in ["ERROR", "CRITICAL"]])
             warning_count = len([log for log in logs if log.level == "WARNING"])
 
-            llm_summary = self.llm_client.generate_daily_summary(
+            # Step 5: Generate health score
+            logger.info("Step 5: Calculating health score")
+            health_score = self.generate_health_score(logs, analyzed_clusters)
+
+            # Step 6: Create top issues list
+            top_issues = self.get_top_issues(analyzed_clusters)
+
+            # Step 7: Generate LLM summary
+            logger.info("Step 7: Generating LLM summary")
+            llm_summary = self._generate_summary_with_fallback(
                 len(logs), error_count, warning_count, top_issues
             )
 
@@ -72,67 +125,200 @@ class AnalysisEngine:
                 execution_time=time.time() - start_time
             )
 
-            # Step 7: Generate and save report
-            logger.info("Step 7: Generating report")
-            self.report_generator.generate_and_save_report(result)
+            # Step 8: Generate and save report
+            logger.info("Step 8: Generating report")
+            try:
+                report_path = self.report_generator.generate_and_save_report(result)
+                logger.info(f"Report saved to: {report_path}")
+            except ReportGeneratorError as e:
+                logger.error(f"Report generation failed: {e}")
+                # Don't fail the entire analysis for report issues
 
-            logger.info(f"Daily analysis completed in {result.execution_time:.2f}s")
+            logger.info(f"Daily analysis completed in {result.execution_time:.2f}s - "
+                       f"{len(logs)} logs, {len(clusters)} clusters, health: {health_score:.2f}")
             return result
 
+        except MilvusConnectionError as e:
+            logger.error(f"Milvus connection failed: {e}")
+            raise AnalysisEngineError(f"Database connection failed: {e}")
         except Exception as e:
             logger.error(f"Analysis failed: {e}")
-            raise
+            raise AnalysisEngineError(f"Analysis pipeline failed: {e}")
+
+    def _query_logs_with_retry(self, start_datetime: datetime, end_datetime: datetime,
+                              max_retries: int = 3) -> List[LogRecord]:
+        """Query logs with retry logic"""
+        for attempt in range(max_retries):
+            try:
+                return self.milvus_client.query_time_range(start_datetime, end_datetime)
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                logger.warning(f"Log query attempt {attempt + 1} failed: {e}, retrying...")
+                time.sleep(2 ** attempt)  # Exponential backoff
+
+        return []
+
+    def _generate_summary_with_fallback(self, total_logs: int, error_count: int,
+                                       warning_count: int, top_issues: List[AnalyzedLog]) -> str:
+        """Generate LLM summary with fallback"""
+        try:
+            return self.llm_client.generate_daily_summary(
+                total_logs, error_count, warning_count, top_issues
+            )
+        except Exception as e:
+            logger.warning(f"LLM summary generation failed: {e}, using fallback")
+            return self._create_fallback_summary(total_logs, error_count, warning_count, top_issues)
+
+    def _create_fallback_summary(self, total_logs: int, error_count: int,
+                                warning_count: int, top_issues: List[AnalyzedLog]) -> str:
+        """Create fallback summary when LLM is unavailable"""
+        error_rate = (error_count / total_logs * 100) if total_logs > 0 else 0
+        warning_rate = (warning_count / total_logs * 100) if total_logs > 0 else 0
+
+        summary_parts = [
+            f"Processed {total_logs} logs.",
+            f"Error rate: {error_rate:.1f}% ({error_count} errors).",
+            f"Warning rate: {warning_rate:.1f}% ({warning_count} warnings)."
+        ]
+
+        if top_issues:
+            high_severity_issues = [issue for issue in top_issues if issue.severity >= 8]
+            if high_severity_issues:
+                summary_parts.append(f"Found {len(high_severity_issues)} high-severity issues requiring attention.")
+
+        return " ".join(summary_parts)
+
+    def _create_empty_result(self, analysis_date: date, execution_time: float) -> DailyAnalysisResult:
+        """Create result for when no logs are found"""
+        return DailyAnalysisResult(
+            analysis_date=analysis_date,
+            total_logs_processed=0,
+            error_count=0,
+            warning_count=0,
+            analyzed_clusters=[],
+            top_issues=[],
+            health_score=1.0,  # Perfect health when no logs
+            llm_summary="No logs found in the specified time range.",
+            execution_time=execution_time
+        )
 
     def process_log_clusters(self, clusters: List[LogCluster]) -> List[LogCluster]:
         """Process log clusters with LLM analysis"""
+        if not clusters:
+            logger.info("No clusters to process")
+            return []
+
         logger.info(f"Processing {len(clusters)} log clusters")
 
-        # Rank clusters by severity
-        self.llm_client.rank_severity(clusters)
+        try:
+            # Rank clusters by severity (fallback available in LLM client)
+            severity_scores = self.llm_client.rank_severity(clusters)
 
-        # Analyze representative logs from each cluster
-        representative_logs = [cluster.representative_log for cluster in clusters]
-        analyzed_logs = self.llm_client.analyze_log_batch(representative_logs)
+            # Update clusters with severity scores
+            for i, cluster in enumerate(clusters):
+                if i < len(severity_scores):
+                    cluster.severity_score = severity_scores[i]
+                else:
+                    # Fallback scoring based on log level
+                    cluster.severity_score = self._calculate_fallback_severity(cluster.representative_log)
 
-        # Update clusters with analysis results
-        for cluster, analyzed in zip(clusters, analyzed_logs):
-            cluster.severity_score = analyzed.severity
+            # Analyze representative logs from high-priority clusters
+            high_priority_clusters = [c for c in clusters if getattr(c, 'severity_score', 0) >= 5]
 
-        return clusters
+            if high_priority_clusters:
+                representative_logs = [c.representative_log for c in high_priority_clusters[:10]]  # Limit for efficiency
+                try:
+                    analyzed_logs = self.llm_client.analyze_log_batch(representative_logs)
+                    # Update with LLM analysis results
+                    for cluster, analyzed in zip(high_priority_clusters, analyzed_logs):
+                        cluster.severity_score = max(cluster.severity_score, analyzed.severity)
+                except Exception as e:
+                    logger.warning(f"LLM batch analysis failed: {e}, using severity scores only")
 
-    def generate_health_score(self, logs: List, analyzed_clusters: List[LogCluster]) -> float:
+            logger.info(f"Processed clusters: {len([c for c in clusters if getattr(c, 'severity_score', 0) >= 5])} significant issues found")
+            return clusters
+
+        except Exception as e:
+            logger.error(f"Cluster processing failed: {e}")
+            # Return clusters with fallback severity scores
+            for cluster in clusters:
+                cluster.severity_score = self._calculate_fallback_severity(cluster.representative_log)
+            return clusters
+
+    def _calculate_fallback_severity(self, log: LogRecord) -> int:
+        """Calculate fallback severity score based on log level"""
+        severity_map = {
+            "CRITICAL": 10,
+            "ERROR": 8,
+            "WARNING": 5,
+            "INFO": 2,
+            "DEBUG": 1
+        }
+        return severity_map.get(log.level, 3)
+
+    def generate_health_score(self, logs: List[LogRecord], analyzed_clusters: List[LogCluster]) -> float:
         """Generate system health score (0-1 scale)"""
         if not logs:
             return 1.0
 
-        error_ratio = len([log for log in logs if log.level == "ERROR"]) / len(logs)
-        warning_ratio = len([log for log in logs if log.level == "WARNING"]) / len(logs)
+        # Calculate basic error/warning ratios
+        error_count = len([log for log in logs if log.level in ["ERROR", "CRITICAL"]])
+        warning_count = len([log for log in logs if log.level == "WARNING"])
+        total_logs = len(logs)
 
-        # Simple health calculation
-        health_score = 1.0 - (error_ratio * 0.6 + warning_ratio * 0.3)
+        error_ratio = error_count / total_logs if total_logs > 0 else 0
+        warning_ratio = warning_count / total_logs if total_logs > 0 else 0
 
-        # Factor in LLM severity scores
+        # Base health calculation (weighted by severity)
+        base_health = 1.0 - (error_ratio * 0.7 + warning_ratio * 0.3)
+
+        # Factor in LLM severity analysis if available
         if analyzed_clusters:
-            avg_severity = sum(c.severity_score or 1 for c in analyzed_clusters) / len(analyzed_clusters)
-            severity_impact = (avg_severity - 1) / 9  # Normalize to 0-1
-            health_score *= (1 - severity_impact * 0.3)
+            cluster_scores = [getattr(c, 'severity_score', 5) for c in analyzed_clusters]
+            if cluster_scores:
+                avg_severity = sum(cluster_scores) / len(cluster_scores)
+                # Normalize severity impact (1-10 scale to 0-1)
+                severity_impact = (avg_severity - 1) / 9
+                # Apply severity impact with diminishing returns
+                base_health *= (1 - severity_impact * 0.4)
 
-        return max(0.0, min(1.0, health_score))
+        # Ensure score is within bounds
+        health_score = max(0.0, min(1.0, base_health))
 
-    def get_top_issues(self, analyzed_clusters: List[LogCluster]) -> List[AnalyzedLog]:
+        logger.info(f"Health score calculation: {error_count} errors, {warning_count} warnings, "
+                   f"score: {health_score:.3f}")
+        return health_score
+
+    def get_top_issues(self, analyzed_clusters: List[LogCluster], max_issues: int = 10) -> List[AnalyzedLog]:
         """Get top issues sorted by severity"""
+        if not analyzed_clusters:
+            return []
+
         all_issues = []
 
         for cluster in analyzed_clusters:
-            if cluster.severity_score and cluster.severity_score >= 5:  # Only significant issues
+            severity_score = getattr(cluster, 'severity_score', 0)
+            if severity_score >= 5:  # Only significant issues
+                # Determine category based on severity and log level
+                if severity_score >= 8 or cluster.representative_log.level in ["ERROR", "CRITICAL"]:
+                    category = "error"
+                elif severity_score >= 6 or cluster.representative_log.level == "WARNING":
+                    category = "warning"
+                else:
+                    category = "info"
+
                 analyzed_log = AnalyzedLog(
                     log=cluster.representative_log,
-                    severity=cluster.severity_score,
-                    reasoning=f"Cluster of {cluster.count} similar logs with severity {cluster.severity_score}",
-                    category="error" if cluster.severity_score >= 7 else "warning"
+                    severity=severity_score,
+                    reasoning=f"Cluster of {cluster.count} similar logs (severity: {severity_score})",
+                    category=category
                 )
                 all_issues.append(analyzed_log)
 
-        # Sort by severity and return top 10
+        # Sort by severity (descending) and return top issues
         all_issues.sort(key=lambda x: x.severity, reverse=True)
-        return all_issues[:10]
+        top_issues = all_issues[:max_issues]
+
+        logger.info(f"Identified {len(top_issues)} top issues from {len(analyzed_clusters)} clusters")
+        return top_issues
