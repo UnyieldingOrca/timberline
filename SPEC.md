@@ -7,9 +7,9 @@ Timberline is a scalable, AI-powered log analysis platform designed for Kubernet
 
 ## Component Specifications
 
-### 1. Log Collector (Go DaemonSet)
+### 1. Log Collector (Fluent Bit DaemonSet)
 
-**Purpose**: Efficiently collect, pre-filter, and forward logs from all Kubernetes nodes.
+**Purpose**: Efficiently collect, pre-filter, and forward logs from all Kubernetes nodes using the industry-standard Fluent Bit collector.
 
 #### Responsibilities
 - Tail log files from `/var/log/containers/*` and `/var/log/pods/*`
@@ -19,26 +19,23 @@ Timberline is a scalable, AI-powered log analysis platform designed for Kubernet
 - Enrich logs with Kubernetes metadata
 
 #### Technical Requirements
-- **Language**: Go
+- **Technology**: Fluent Bit (CNCF graduated project)
 - **Deployment**: Kubernetes DaemonSet
 - **Resource Limits**:
-  - Memory: 128Mi - 256Mi
-  - CPU: 100m - 200m
-- **Storage**: Optional file-based buffer (1GB)
+  - Memory: 64Mi - 128Mi (reduced due to Fluent Bit efficiency)
+  - CPU: 50m - 100m (reduced due to C-based implementation)
+- **Storage**: Built-in buffering with optional file-based persistence
 
 #### Key Features
 - **Pre-filtering**: Configurable rules to filter noise (debug logs, info logs, health checks)
 - **Log Parsing**: Support for JSON, structured, and unstructured logs
 - **Metadata Enrichment**: Add pod name, namespace, node, labels
-- **Compression**: Gzip compression for network efficiency
-- **Security**: Optional TLS encryption for log transmission
+- **Output Format**: JSON Lines format for efficient streaming
+- **Compression**: Built-in compression support
+- **Security**: TLS encryption and authentication support
 
 #### Configuration
-Configuration will be handled via environment variables:
-- Log levels to capture (ERROR, WARN)
-- Buffer size and flush interval
-- Ingestor endpoint URL
-- Authentication tokens (if needed)
+Configuration via ConfigMap with industry-standard log collection patterns
 
 ### 2. Log Ingester (Go Service)
 
@@ -65,7 +62,7 @@ Configuration will be handled via environment variables:
 
 #### API Endpoints
 ```
-POST /api/v1/logs/batch     - Batch log ingestion
+POST /api/v1/logs/stream    - Streaming log ingestion (JSON Lines format)
 GET  /api/v1/health         - Health check
 GET  /api/v1/metrics        - Prometheus metrics
 ```
@@ -153,7 +150,7 @@ Collections:
    └── Metadata enrichment adds context
 
 3. Ingestion Phase
-   └── Collectors send batched logs to ingester
+   └── Collectors stream logs to ingester
    └── Ingester validates and processes logs
    └── Extract embeddings using an AI model
    └── Write to Milvus

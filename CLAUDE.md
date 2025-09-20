@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 Timberline is an AI-powered log analysis platform for Kubernetes environments consisting of multiple components:
-- **Log Collector** (Go DaemonSet) - Currently implemented
+- **Log Collector** (Fluent Bit DaemonSet) - Industry-standard log collection
 - **Log Ingestor** (Go Service) - Currently implemented
 - **Vector Database** (Milvus) - Integrated via Docker
 - **AI Analysis Engine** (Python Service/Job) - Currently implemented
@@ -13,7 +13,7 @@ Timberline is an AI-powered log analysis platform for Kubernetes environments co
 
 ## Architecture
 
-The system follows a pipeline architecture where logs flow from Kubernetes pods → Log Collector → Log Ingestor → Vector Database → AI Analysis Engine. The Log Collector enriches logs with Kubernetes metadata and performs pre-filtering before forwarding to the ingestion pipeline.
+The system follows a pipeline architecture where logs flow from Kubernetes pods → Fluent Bit Collector → Log Ingestor → Vector Database → AI Analysis Engine. Fluent Bit enriches logs with Kubernetes metadata and performs pre-filtering before streaming to the ingestion pipeline via JSON Lines format.
 
 ## Development Commands
 
@@ -30,10 +30,10 @@ make install-test-deps # Install Python test dependencies
 ```
 
 ### Component-Specific Commands
-Each Go component (log-collector, log-ingestor) has identical Makefile targets:
+The Go log-ingestor component has these Makefile targets:
 
 ```bash
-cd log-collector    # or cd log-ingestor
+cd log-ingestor
 make help           # Show available targets
 make build          # Build binary
 make test           # Run tests with race detection
@@ -52,13 +52,10 @@ make dev            # Quick dev cycle: fmt + lint + test + build
 
 ```
 timberline/
-├── log-collector/              # Go-based DaemonSet (implemented)
-│   ├── cmd/main.go            # Application entry point
-│   ├── internal/              # Core implementation modules
-│   ├── k8s/                   # Kubernetes manifests
-│   ├── Dockerfile             # Container definition
-│   ├── Makefile               # Build automation
-│   └── go.mod                 # Go dependencies
+├── fluent-bit/                 # Fluent Bit configuration and manifests
+│   ├── configmap.yaml         # Fluent Bit configuration
+│   ├── daemonset.yaml         # Kubernetes DaemonSet manifest
+│   └── rbac.yaml              # Service account and RBAC
 ├── log-ingestor/               # Go-based REST API service (implemented)
 │   ├── cmd/main.go            # Application entry point
 │   ├── internal/              # Core implementation modules
@@ -74,26 +71,26 @@ timberline/
 
 ## Key Technologies
 
-- **Go 1.23+** with modules for log collector and log ingestor
-- **Kubernetes client-go** for cluster integration
-- **Prometheus client** for metrics
+- **Fluent Bit** (CNCF graduated) for log collection and streaming
+- **Go 1.23+** with modules for log ingestor
+- **JSON Lines** format for efficient log streaming
 - **Milvus** vector database for embedding storage
 - **Docker Compose** for development environment
 - **Python/pytest** for integration testing
 
 ## Configuration
 
-The Log Collector uses environment variables for configuration:
-- `LOG_PATHS`, `LOG_LEVELS`, `BUFFER_SIZE`, `FLUSH_INTERVAL`
-- `INGESTOR_URL`, `BATCH_SIZE`, `RETRY_ATTEMPTS`
-- `METRICS_PORT` for Prometheus endpoint
+Fluent Bit is configured via ConfigMap with industry-standard patterns:
+- Log path filtering for Kubernetes containers and pods
+- Kubernetes metadata enrichment (pod, namespace, node, labels)
+- JSON Lines output format to log-ingestor `/api/v1/logs/stream` endpoint
+- Built-in buffering and retry mechanisms
 
 ## Testing and Validation
 
 ### Unit Tests
-Run unit tests for each component:
+Run unit tests for the log ingestor:
 ```bash
-cd log-collector && make test    # Test log collector
 cd log-ingestor && make test     # Test log ingestor
 ```
 
@@ -126,16 +123,16 @@ pytest tests/docker/test_integration.py -v -m "docker and slow"
 ```
 
 The integration tests cover:
-- Service health checks (log-collector, log-ingestor, Milvus, llama.cpp, etcd, MinIO)
-- Log ingestion API endpoints
-- Complete pipeline data flow from files → collector → ingestor → Milvus
+- Service health checks (fluent-bit, log-ingestor, Milvus, llama.cpp, etcd, MinIO)
+- Log ingestion API endpoints (JSON Lines streaming format)
+- Complete pipeline data flow from files → Fluent Bit → ingestor → Milvus
 - Embedding generation and semantic search
 - Data persistence verification
 - Metrics collection endpoints
 - AI analysis engine integration and log clustering
 - LLM-based severity scoring and report generation
 
-The collector includes comprehensive metrics and health endpoints for monitoring in production.
+Fluent Bit provides built-in metrics and health endpoints for monitoring in production.
 
 ## Future Components
 

@@ -64,15 +64,15 @@ func main() {
 	}
 
 	// Initialize handlers
-	batchHandler := handlers.NewBatchHandler(storageClient, cfg.BatchSize)
+	streamHandler := handlers.NewStreamHandler(storageClient, cfg.BatchSize)
 	healthHandler := handlers.NewHealthHandler(storageClient, Version)
 
 	// Setup HTTP router
 	router := mux.NewRouter()
-	
+
 	// API routes
 	api := router.PathPrefix("/api/v1").Subrouter()
-	api.HandleFunc("/logs/batch", batchHandler.HandleBatch).Methods("POST")
+	api.HandleFunc("/logs/stream", streamHandler.HandleStream).Methods("POST")
 	api.HandleFunc("/health", healthHandler.HandleHealth).Methods("GET")
 	api.HandleFunc("/healthz", healthHandler.HandleLiveness).Methods("GET")
 	api.HandleFunc("/ready", healthHandler.HandleReadiness).Methods("GET")

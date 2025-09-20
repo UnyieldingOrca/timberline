@@ -164,37 +164,6 @@ services:
     networks:
       - timberline
 
-  log-collector:
-    container_name: timberline-log-collector
-    build:
-      context: ./log-collector
-      dockerfile: Dockerfile
-    environment:
-      # Log level for the collector application: debug, info, warn, error, fatal, panic
-      - LOG_LEVEL=debug
-      - LOG_PATHS=/var/log/test-logs/*.log
-      - LOG_LEVELS=ERROR,WARN,INFO
-      - BUFFER_SIZE=1000
-      - FLUSH_INTERVAL=2s
-      - FORWARDER_URL=http://log-ingestor:8080/api/v1/logs/batch
-      - MAX_BATCH_SIZE=100
-      - METRICS_PORT=9090
-    volumes:
-      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/test-logs:/var/log/test-logs:ro
-    ports:
-      - "9090:9090"
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/metrics"]
-      interval: 5s
-      start_period: 1s
-      timeout: 3s
-      retries: 5
-    depends_on:
-      log-ingestor:
-        condition: service_healthy
-    networks:
-      - timberline
-
   attu:
     container_name: timberline-attu
     image: zilliz/attu:v2.4.8

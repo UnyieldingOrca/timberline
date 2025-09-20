@@ -4,8 +4,8 @@ The Log Ingestor is a high-performance Go service that receives logs from collec
 
 ## Features
 
-- **High-Performance REST API**: Accept log batches via HTTP endpoints
-- **Batch Processing**: Efficient batching for optimal database performance
+- **High-Performance REST API**: Accept log streams via HTTP endpoints (JSON Lines format)
+- **Streaming Processing**: Efficient streaming with internal batching for optimal database performance
 - **Schema Validation**: Validate log structure and required fields
 - **Prometheus Metrics**: Comprehensive monitoring and observability
 - **Health Checks**: Kubernetes-ready liveness and readiness probes
@@ -16,7 +16,7 @@ The Log Ingestor is a high-performance Go service that receives logs from collec
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/v1/logs/batch` | Batch log ingestion |
+| POST | `/api/v1/logs/stream` | Streaming log ingestion (JSON Lines format) |
 | GET | `/api/v1/health` | Detailed health check |
 | GET | `/api/v1/healthz` | Liveness probe |
 | GET | `/api/v1/ready` | Readiness probe |
@@ -121,27 +121,28 @@ The service exposes Prometheus metrics on port 9090:
 
 ## API Usage
 
-### Batch Log Ingestion
+### Streaming Log Ingestion (JSON Lines)
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/logs/batch \
-  -H "Content-Type: application/json" \
-  -d '{
-    "logs": [
-      {
-        "timestamp": "2023-12-01T10:00:00Z",
-        "message": "Application started",
-        "level": "INFO",
-        "source": "/var/log/containers/app.log",
-        "metadata": {
-          "pod_name": "app-123",
-          "namespace": "production",
-          "node_name": "node-1",
-          "labels": {"app": "web"}
-        }
-      }
-    ]
-  }'
+curl -X POST http://localhost:8080/api/v1/logs/stream \
+  -H "Content-Type: application/x-ndjson" \
+  -d '{"timestamp": 1701423600000, "message": "Application started", "source": "app", "metadata": {"level": "INFO", "pod_name": "app-123", "namespace": "production"}}
+{"timestamp": 1701423601000, "message": "Request processed", "source": "app", "metadata": {"level": "INFO", "pod_name": "app-123", "namespace": "production"}}
+{"timestamp": 1701423602000, "message": "Error occurred", "source": "app", "metadata": {"level": "ERROR", "pod_name": "app-123", "namespace": "production"}}'
+```
+
+### Fluent Bit Configuration
+
+```yaml
+[OUTPUT]
+    Name              http
+    Match             *
+    Host              log-ingestor
+    Port              8080
+    URI               /api/v1/logs/stream
+    Format            json_lines
+    json_date_key     timestamp
+    json_date_format  epoch
 ```
 
 ### Health Check
@@ -154,8 +155,9 @@ curl http://localhost:8080/api/v1/health
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Log Collector │───▶│  Log Ingestor   │───▶│  Milvus Vector  │
+│   Fluent Bit    │───▶│  Log Ingestor   │───▶│  Milvus Vector  │
 │   (DaemonSet)   │    │   (Service)     │    │    Database     │
+│  JSON Lines     │    │  Stream API     │    │                 │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
                               │
                               ▼

@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -9,6 +11,43 @@ import (
 
 	"github.com/timberline/log-ingestor/internal/models"
 )
+
+// mockStorage implements storage.StorageInterface for testing
+type mockStorage struct {
+	healthCheckError bool
+}
+
+func (m *mockStorage) StoreBatch(ctx context.Context, batch *models.LogBatch) error {
+	if m.healthCheckError {
+		return errors.New("storage error")
+	}
+	return nil
+}
+
+func (m *mockStorage) Connect(ctx context.Context) error {
+	if m.healthCheckError {
+		return errors.New("connection error")
+	}
+	return nil
+}
+
+func (m *mockStorage) Close() error {
+	return nil
+}
+
+func (m *mockStorage) CreateCollection(ctx context.Context) error {
+	if m.healthCheckError {
+		return errors.New("create collection error")
+	}
+	return nil
+}
+
+func (m *mockStorage) HealthCheck(ctx context.Context) error {
+	if m.healthCheckError {
+		return errors.New("health check failed")
+	}
+	return nil
+}
 
 func TestNewHealthHandler(t *testing.T) {
 	storage := &mockStorage{}
