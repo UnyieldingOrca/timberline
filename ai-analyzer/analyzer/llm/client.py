@@ -120,22 +120,13 @@ class LLMClient:
 
         logger.info(f"Analyzing batch of {len(logs)} logs")
 
-        try:
-            # Create analysis prompt
-            prompt = self._create_analysis_prompt(logs)
-            response = self.call_llm(prompt, max_tokens=2000)
+        # Create analysis prompt
+        prompt = self._create_analysis_prompt(logs)
+        response = self.call_llm(prompt, max_tokens=2000)
 
-            # Parse JSON response
-            try:
-                analysis_data = json.loads(response.content)
-                return self._parse_analysis_response(logs, analysis_data)
-            except json.JSONDecodeError:
-                logger.warning("Failed to parse JSON response, using fallback analysis")
-                return self._fallback_log_analysis(logs)
-
-        except Exception as e:
-            logger.warning(f"LLM batch analysis failed: {e}, using fallback")
-            return self._fallback_log_analysis(logs)
+        # Parse JSON response
+        analysis_data = json.loads(response.content)
+        return self._parse_analysis_response(logs, analysis_data)
 
     def rank_severity(self, clusters: List[LogCluster]) -> List[int]:
         """Rank log clusters by severity (1-10 scale)"""
@@ -144,28 +135,17 @@ class LLMClient:
 
         logger.info(f"Ranking severity for {len(clusters)} clusters")
 
-        try:
-            prompt = self._create_ranking_prompt(clusters)
-            response = self.call_llm(prompt, max_tokens=500)
+        prompt = self._create_ranking_prompt(clusters)
+        response = self.call_llm(prompt, max_tokens=500)
 
-            # Parse JSON response
-            try:
-                ranking_data = json.loads(response.content)
-                scores = ranking_data.get("severity_scores", [])
+        # Parse JSON response
+        ranking_data = json.loads(response.content)
+        scores = ranking_data.get("severity_scores", [])
 
-                # Ensure we have scores for all clusters
-                while len(scores) < len(clusters):
-                    scores.append(self._calculate_fallback_severity(clusters[len(scores)]))
+        if len(scores) != len(clusters):
+            raise LLMError(f"LLM returned {len(scores)} scores for {len(clusters)} clusters")
 
-                return scores[:len(clusters)]
-
-            except (json.JSONDecodeError, KeyError):
-                logger.warning("Failed to parse ranking response, using fallback")
-                return self._fallback_cluster_ranking(clusters)
-
-        except Exception as e:
-            logger.warning(f"LLM ranking failed: {e}, using fallback")
-            return self._fallback_cluster_ranking(clusters)
+        return scores
 
     def generate_daily_summary(self, total_logs: int, error_count: int, warning_count: int,
                              top_issues: List[AnalyzedLog]) -> str:
@@ -279,15 +259,12 @@ Be concise and actionable."""
                     analysis = a
                     break
 
-            if analysis:
-                severity = max(1, min(10, analysis.get("severity", 5)))
-                category = analysis.get("category", "info")
-                reasoning = analysis.get("reasoning", "No specific reasoning provided")
-            else:
-                # Fallback analysis
-                severity = self._calculate_fallback_severity_from_log(log)
-                category = self._determine_category_from_level(log.level)
-                reasoning = f"Fallback analysis based on log level: {log.level}"
+            if not analysis:
+                raise LLMError(f"Missing analysis for log {len(analyzed_logs) + 1} in LLM response")
+
+            severity = max(1, min(10, analysis.get("severity", 5)))
+            category = analysis.get("category", "info")
+            reasoning = analysis.get("reasoning", "No specific reasoning provided")
 
             analyzed_logs.append(AnalyzedLog(
                 log=log,
@@ -298,59 +275,4 @@ Be concise and actionable."""
 
         return analyzed_logs
 
-    def _fallback_log_analysis(self, logs: List[LogRecord]) -> List[AnalyzedLog]:
-        """Fallback analysis when LLM is unavailable"""
-        analyzed_logs = []
-
-        for log in logs:
-            severity = self._calculate_fallback_severity_from_log(log)
-            category = self._determine_category_from_level(log.level)
-            reasoning = f"Rule-based analysis: {log.level} level log from {log.source}"
-
-            analyzed_logs.append(AnalyzedLog(
-                log=log,
-                severity=severity,
-                reasoning=reasoning,
-                category=category
-            ))
-
-        return analyzed_logs
-
-    def _fallback_cluster_ranking(self, clusters: List[LogCluster]) -> List[int]:
-        """Fallback severity ranking when LLM is unavailable"""
-        return [self._calculate_fallback_severity(cluster) for cluster in clusters]
-
-    def _calculate_fallback_severity(self, cluster: LogCluster) -> int:
-        """Calculate fallback severity for a cluster"""
-        return self._calculate_fallback_severity_from_log(cluster.representative_log)
-
-    def _calculate_fallback_severity_from_log(self, log: LogRecord) -> int:
-        """Calculate fallback severity from log level"""
-        severity_map = {
-            "CRITICAL": 10,
-            "ERROR": 8,
-            "WARNING": 5,
-            "INFO": 2,
-            "DEBUG": 1
-        }
-
-        base_severity = severity_map.get(log.level, 3)
-
-        # Boost severity for certain keywords
-        message_lower = log.message.lower()
-        if any(keyword in message_lower for keyword in ["crash", "panic", "fatal", "failed to start"]):
-            base_severity = min(10, base_severity + 2)
-        elif any(keyword in message_lower for keyword in ["timeout", "connection", "unavailable"]):
-            base_severity = min(10, base_severity + 1)
-
-        return base_severity
-
-    def _determine_category_from_level(self, level: str) -> str:
-        """Determine category from log level"""
-        if level in ["CRITICAL", "ERROR"]:
-            return "error"
-        elif level == "WARNING":
-            return "warning"
-        else:
-            return "info"
 

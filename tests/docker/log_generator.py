@@ -219,6 +219,153 @@ class LogGenerator:
 
         return log_entries
 
+    def generate_realistic_error_scenarios(self) -> List[Dict[str, Any]]:
+        """Generate realistic error scenarios for AI analysis testing."""
+        scenarios = [
+            # Database errors
+            {
+                "level": "ERROR",
+                "source": "database-service",
+                "message": "Connection pool exhausted: too many open connections (max: 100, current: 100)",
+                "severity": 8
+            },
+            {
+                "level": "CRITICAL",
+                "source": "database-service",
+                "message": "Database server not responding: connection timeout after 30 seconds",
+                "severity": 10
+            },
+            {
+                "level": "ERROR",
+                "source": "database-service",
+                "message": "Deadlock detected in transaction: unable to acquire lock on table 'users'",
+                "severity": 7
+            },
+
+            # Authentication/Security errors
+            {
+                "level": "ERROR",
+                "source": "auth-service",
+                "message": "Authentication failed: invalid JWT token signature",
+                "severity": 6
+            },
+            {
+                "level": "WARNING",
+                "source": "auth-service",
+                "message": "Rate limit exceeded: 1000 requests in 60 seconds from IP 192.168.1.100",
+                "severity": 5
+            },
+            {
+                "level": "CRITICAL",
+                "source": "security-monitor",
+                "message": "Potential SQL injection detected: malicious query blocked from user ID 12345",
+                "severity": 9
+            },
+
+            # Performance issues
+            {
+                "level": "WARNING",
+                "source": "api-gateway",
+                "message": "High response time detected: 95th percentile latency is 2.5 seconds",
+                "severity": 6
+            },
+            {
+                "level": "ERROR",
+                "source": "memory-monitor",
+                "message": "Memory usage critical: 95% of heap space consumed (8.5GB of 9GB)",
+                "severity": 8
+            },
+            {
+                "level": "WARNING",
+                "source": "disk-monitor",
+                "message": "Disk space running low: only 5% available on /var/log partition",
+                "severity": 7
+            },
+
+            # Network/Service errors
+            {
+                "level": "ERROR",
+                "source": "payment-gateway",
+                "message": "External payment service unavailable: HTTP 503 Service Unavailable",
+                "severity": 8
+            },
+            {
+                "level": "WARNING",
+                "source": "cache-service",
+                "message": "Redis connection lost: attempting reconnection (attempt 3/5)",
+                "severity": 5
+            },
+            {
+                "level": "ERROR",
+                "source": "notification-service",
+                "message": "Failed to send email notification: SMTP server timeout",
+                "severity": 4
+            },
+
+            # Application logic errors
+            {
+                "level": "ERROR",
+                "source": "order-service",
+                "message": "Order processing failed: insufficient inventory for product SKU-12345",
+                "severity": 6
+            },
+            {
+                "level": "ERROR",
+                "source": "user-service",
+                "message": "User profile update failed: validation error on email format",
+                "severity": 3
+            },
+            {
+                "level": "WARNING",
+                "source": "analytics-service",
+                "message": "Report generation taking longer than expected: 5 minutes elapsed",
+                "severity": 4
+            },
+
+            # Infrastructure errors
+            {
+                "level": "CRITICAL",
+                "source": "kubernetes",
+                "message": "Pod crash loop detected: api-gateway-pod-xyz restarted 5 times in 10 minutes",
+                "severity": 9
+            },
+            {
+                "level": "ERROR",
+                "source": "load-balancer",
+                "message": "Backend server unhealthy: removed api-server-3 from rotation",
+                "severity": 7
+            },
+            {
+                "level": "WARNING",
+                "source": "monitoring",
+                "message": "Metrics collection delayed: Prometheus scrape timeout on target api-gateway",
+                "severity": 4
+            }
+        ]
+
+        log_entries = []
+        base_time = int(time.time() * 1000)
+
+        for i, scenario in enumerate(scenarios):
+            log_entry = {
+                "timestamp": base_time + (i * 2000),  # 2 second intervals
+                "message": scenario["message"],
+                "source": scenario["source"],
+                "metadata": {
+                    "level": scenario["level"],
+                    "container_name": f"{scenario['source']}-container-{i}",
+                    "namespace": "production",
+                    "pod_name": f"{scenario['source']}-pod-{i}",
+                    "service_name": scenario["source"],
+                    "node_name": f"node-{i % 3 + 1}",
+                    "labels": {"app": scenario["source"], "version": "v2.1", "tier": "production"},
+                    "expected_severity": scenario["severity"]  # For validation in tests
+                }
+            }
+            log_entries.append(log_entry)
+
+        return log_entries
+
     def cleanup(self) -> None:
         """Clean up generated test logs."""
         if self.output_dir.exists():

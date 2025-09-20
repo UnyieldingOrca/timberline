@@ -71,6 +71,10 @@ class AnalysisEngine:
         start_time = time.time()
         logger.info(f"Starting daily analysis for {analysis_date}")
 
+        # Check LLM health before proceeding
+        if not self.llm_client.health_check():
+            raise AnalysisEngineError("LLM is not available - analysis requires LLM to function")
+
         # Calculate time range (analysis window ending at the analysis date)
         end_datetime = datetime.combine(analysis_date, datetime.min.time()) + timedelta(days=1)
         start_datetime = end_datetime - timedelta(hours=self.settings.analysis_window_hours)
@@ -108,7 +112,7 @@ class AnalysisEngine:
 
             # Step 7: Generate LLM summary
             logger.info("Step 7: Generating LLM summary")
-            llm_summary = self._generate_summary_with_fallback(
+            llm_summary = self._generate_summary(
                 len(logs), error_count, warning_count, top_issues
             )
 
@@ -159,35 +163,13 @@ class AnalysisEngine:
 
         return []
 
-    def _generate_summary_with_fallback(self, total_logs: int, error_count: int,
-                                       warning_count: int, top_issues: List[AnalyzedLog]) -> str:
-        """Generate LLM summary with fallback"""
-        try:
-            return self.llm_client.generate_daily_summary(
-                total_logs, error_count, warning_count, top_issues
-            )
-        except Exception as e:
-            logger.warning(f"LLM summary generation failed: {e}, using fallback")
-            return self._create_fallback_summary(total_logs, error_count, warning_count, top_issues)
+    def _generate_summary(self, total_logs: int, error_count: int,
+                         warning_count: int, top_issues: List[AnalyzedLog]) -> str:
+        """Generate LLM summary"""
+        return self.llm_client.generate_daily_summary(
+            total_logs, error_count, warning_count, top_issues
+        )
 
-    def _create_fallback_summary(self, total_logs: int, error_count: int,
-                                warning_count: int, top_issues: List[AnalyzedLog]) -> str:
-        """Create fallback summary when LLM is unavailable"""
-        error_rate = (error_count / total_logs * 100) if total_logs > 0 else 0
-        warning_rate = (warning_count / total_logs * 100) if total_logs > 0 else 0
-
-        summary_parts = [
-            f"Processed {total_logs} logs.",
-            f"Error rate: {error_rate:.1f}% ({error_count} errors).",
-            f"Warning rate: {warning_rate:.1f}% ({warning_count} warnings)."
-        ]
-
-        if top_issues:
-            high_severity_issues = [issue for issue in top_issues if issue.severity >= 8]
-            if high_severity_issues:
-                summary_parts.append(f"Found {len(high_severity_issues)} high-severity issues requiring attention.")
-
-        return " ".join(summary_parts)
 
     def _create_empty_result(self, analysis_date: date, execution_time: float) -> DailyAnalysisResult:
         """Create result for when no logs are found"""
@@ -211,51 +193,26 @@ class AnalysisEngine:
 
         logger.info(f"Processing {len(clusters)} log clusters")
 
-        try:
-            # Rank clusters by severity (fallback available in LLM client)
-            severity_scores = self.llm_client.rank_severity(clusters)
+        # Rank clusters by severity using LLM
+        severity_scores = self.llm_client.rank_severity(clusters)
 
-            # Update clusters with severity scores
-            for i, cluster in enumerate(clusters):
-                if i < len(severity_scores):
-                    cluster.severity_score = severity_scores[i]
-                else:
-                    # Fallback scoring based on log level
-                    cluster.severity_score = self._calculate_fallback_severity(cluster.representative_log)
+        # Update clusters with severity scores
+        for i, cluster in enumerate(clusters):
+            cluster.severity_score = severity_scores[i]
 
-            # Analyze representative logs from high-priority clusters
-            high_priority_clusters = [c for c in clusters if getattr(c, 'severity_score', 0) >= 5]
+        # Analyze representative logs from high-priority clusters
+        high_priority_clusters = [c for c in clusters if getattr(c, 'severity_score', 0) >= 5]
 
-            if high_priority_clusters:
-                representative_logs = [c.representative_log for c in high_priority_clusters[:10]]  # Limit for efficiency
-                try:
-                    analyzed_logs = self.llm_client.analyze_log_batch(representative_logs)
-                    # Update with LLM analysis results
-                    for cluster, analyzed in zip(high_priority_clusters, analyzed_logs):
-                        cluster.severity_score = max(cluster.severity_score, analyzed.severity)
-                except Exception as e:
-                    logger.warning(f"LLM batch analysis failed: {e}, using severity scores only")
+        if high_priority_clusters:
+            representative_logs = [c.representative_log for c in high_priority_clusters[:10]]  # Limit for efficiency
+            analyzed_logs = self.llm_client.analyze_log_batch(representative_logs)
+            # Update with LLM analysis results
+            for cluster, analyzed in zip(high_priority_clusters, analyzed_logs):
+                cluster.severity_score = max(cluster.severity_score, analyzed.severity)
 
-            logger.info(f"Processed clusters: {len([c for c in clusters if getattr(c, 'severity_score', 0) >= 5])} significant issues found")
-            return clusters
+        logger.info(f"Processed clusters: {len([c for c in clusters if getattr(c, 'severity_score', 0) >= 5])} significant issues found")
+        return clusters
 
-        except Exception as e:
-            logger.error(f"Cluster processing failed: {e}")
-            # Return clusters with fallback severity scores
-            for cluster in clusters:
-                cluster.severity_score = self._calculate_fallback_severity(cluster.representative_log)
-            return clusters
-
-    def _calculate_fallback_severity(self, log: LogRecord) -> int:
-        """Calculate fallback severity score based on log level"""
-        severity_map = {
-            "CRITICAL": 10,
-            "ERROR": 8,
-            "WARNING": 5,
-            "INFO": 2,
-            "DEBUG": 1
-        }
-        return severity_map.get(log.level, 3)
 
     def generate_health_score(self, logs: List[LogRecord], analyzed_clusters: List[LogCluster]) -> float:
         """Generate system health score (0-1 scale)"""

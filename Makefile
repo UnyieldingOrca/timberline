@@ -14,9 +14,13 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # Docker management
-docker-up: ## Start Docker integration environment
+docker-up: download-models ## Start Docker integration environment
 	@echo "🐳 Starting Docker integration environment..."
 	./scripts/docker-compose-up.sh
+
+download-models: ## Download required AI models
+	@echo "📦 Downloading AI models..."
+	./scripts/download-models.sh
 
 docker-down: ## Stop Docker integration environment
 	@echo "🐳 Stopping Docker integration environment..."

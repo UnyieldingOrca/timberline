@@ -14,7 +14,6 @@ from analyzer.models.log import (
 from analyzer.storage.milvus_client import MilvusConnectionError
 from analyzer.reporting.generator import ReportGeneratorError
 
-
 @pytest.fixture
 def settings(tmp_path):
     """Create test settings"""
@@ -28,7 +27,6 @@ def settings(tmp_path):
         'llm_endpoint': 'http://localhost:8000',
         'report_output_dir': str(tmp_path / "reports")
     })
-
 
 @pytest.fixture
 def mock_components():
@@ -46,7 +44,6 @@ def mock_components():
             'llm': mock_llm.return_value,
             'reporter': mock_reporter.return_value
         }
-
 
 @pytest.fixture
 def sample_logs():
@@ -67,7 +64,6 @@ def sample_logs():
         ))
 
     return logs
-
 
 @pytest.fixture
 def sample_clusters(sample_logs):
@@ -96,7 +92,6 @@ def sample_clusters(sample_logs):
 
     return clusters
 
-
 def test_initialization_success(settings, mock_components):
     """Test successful AnalysisEngine initialization"""
     engine = AnalysisEngine(settings)
@@ -105,7 +100,6 @@ def test_initialization_success(settings, mock_components):
     assert engine.milvus_client is not None
     assert engine.llm_client is not None
     assert engine.report_generator is not None
-
 
 def test_initialization_invalid_settings():
     """Test initialization with invalid settings"""
@@ -122,7 +116,6 @@ def test_initialization_invalid_settings():
     with pytest.raises(AnalysisEngineError, match="Invalid settings"):
         AnalysisEngine(settings)
 
-
 def test_initialization_component_failure(settings):
     """Test initialization when component creation fails"""
     with patch('analyzer.analysis.engine.MilvusQueryEngine') as mock_milvus:
@@ -130,7 +123,6 @@ def test_initialization_component_failure(settings):
 
         with pytest.raises(AnalysisEngineError, match="Failed to initialize analysis engine"):
             AnalysisEngine(settings)
-
 
 def test_health_check_all_healthy(settings, mock_components):
     """Test health check when all components are healthy"""
@@ -147,7 +139,6 @@ def test_health_check_all_healthy(settings, mock_components):
     assert health['report_generator'] is True
     assert health['overall'] is True
 
-
 def test_health_check_partial_failure(settings, mock_components):
     """Test health check with some component failures"""
     engine = AnalysisEngine(settings)
@@ -163,7 +154,6 @@ def test_health_check_partial_failure(settings, mock_components):
     assert health['report_generator'] is True
     assert health['overall'] is False
 
-
 def test_health_check_with_exceptions(settings, mock_components):
     """Test health check when components raise exceptions"""
     engine = AnalysisEngine(settings)
@@ -178,7 +168,6 @@ def test_health_check_with_exceptions(settings, mock_components):
     assert health['llm'] is False
     assert health['report_generator'] is True
     assert health['overall'] is False
-
 
 def test_analyze_daily_logs_success(settings, mock_components, sample_logs, sample_clusters):
     """Test successful daily log analysis"""
@@ -215,14 +204,12 @@ def test_analyze_daily_logs_success(settings, mock_components, sample_logs, samp
     mock_components['llm'].rank_severity.assert_called_once()
     mock_components['reporter'].generate_and_save_report.assert_called_once()
 
-
 def test_analyze_daily_logs_invalid_date(settings, mock_components):
     """Test analysis with invalid date parameter"""
     engine = AnalysisEngine(settings)
 
     with pytest.raises(AnalysisEngineError, match="analysis_date must be a date object"):
         engine.analyze_daily_logs("2022-01-01")  # String instead of date
-
 
 def test_analyze_daily_logs_no_logs_found(settings, mock_components):
     """Test analysis when no logs are found"""
@@ -241,7 +228,6 @@ def test_analyze_daily_logs_no_logs_found(settings, mock_components):
     assert result.health_score == 1.0  # Perfect health when no logs
     assert "No logs found" in result.llm_summary
 
-
 def test_analyze_daily_logs_milvus_connection_error(settings, mock_components):
     """Test analysis with Milvus connection failure"""
     engine = AnalysisEngine(settings)
@@ -252,7 +238,6 @@ def test_analyze_daily_logs_milvus_connection_error(settings, mock_components):
     with pytest.raises(AnalysisEngineError, match="Database connection failed"):
         engine.analyze_daily_logs(date(2022, 1, 1))
 
-
 def test_analyze_daily_logs_general_exception(settings, mock_components):
     """Test analysis with general exception"""
     engine = AnalysisEngine(settings)
@@ -262,7 +247,6 @@ def test_analyze_daily_logs_general_exception(settings, mock_components):
 
     with pytest.raises(AnalysisEngineError, match="Analysis pipeline failed"):
         engine.analyze_daily_logs(date(2022, 1, 1))
-
 
 def test_analyze_daily_logs_report_generation_failure(settings, mock_components, sample_logs, sample_clusters):
     """Test analysis continues when report generation fails"""
@@ -281,7 +265,6 @@ def test_analyze_daily_logs_report_generation_failure(settings, mock_components,
     assert isinstance(result, DailyAnalysisResult)
     assert result.total_logs_processed == 10
 
-
 def test_query_logs_with_retry_success(settings, mock_components, sample_logs):
     """Test successful log querying with retry logic"""
     engine = AnalysisEngine(settings)
@@ -295,7 +278,6 @@ def test_query_logs_with_retry_success(settings, mock_components, sample_logs):
 
     assert logs == sample_logs
     mock_components['milvus'].query_time_range.assert_called_once_with(start_time, end_time)
-
 
 def test_query_logs_with_retry_eventual_success(settings, mock_components, sample_logs):
     """Test log querying succeeds after retries"""
@@ -317,7 +299,6 @@ def test_query_logs_with_retry_eventual_success(settings, mock_components, sampl
     assert logs == sample_logs
     assert mock_components['milvus'].query_time_range.call_count == 3
 
-
 def test_query_logs_with_retry_max_retries_exceeded(settings, mock_components):
     """Test log querying fails after max retries"""
     engine = AnalysisEngine(settings)
@@ -330,7 +311,6 @@ def test_query_logs_with_retry_max_retries_exceeded(settings, mock_components):
     with patch('time.sleep'):  # Speed up test
         with pytest.raises(Exception, match="Persistent failure"):
             engine._query_logs_with_retry(start_time, end_time, max_retries=3)
-
 
 def test_process_log_clusters_success(settings, mock_components, sample_clusters):
     """Test successful log cluster processing"""
@@ -350,7 +330,6 @@ def test_process_log_clusters_success(settings, mock_components, sample_clusters
     assert result_clusters[1].severity_score == 10
     assert result_clusters[2].severity_score == 5
 
-
 def test_process_log_clusters_empty_input(settings, mock_components):
     """Test cluster processing with empty input"""
     engine = AnalysisEngine(settings)
@@ -359,42 +338,17 @@ def test_process_log_clusters_empty_input(settings, mock_components):
 
     assert result_clusters == []
 
-
 def test_process_log_clusters_llm_failure(settings, mock_components, sample_clusters):
-    """Test cluster processing with LLM failure"""
+    """Test cluster processing with LLM failure - should raise exception"""
     engine = AnalysisEngine(settings)
 
     mock_components['llm'].rank_severity.side_effect = Exception("LLM failure")
 
-    result_clusters = engine.process_log_clusters(sample_clusters)
+    # Should raise exception when LLM fails
+    with pytest.raises(Exception, match="LLM failure"):
+        engine.process_log_clusters(sample_clusters)
 
-    # Should return clusters with fallback severity scores
-    assert len(result_clusters) == 3
-    assert all(hasattr(cluster, 'severity_score') for cluster in result_clusters)
-    # Check fallback scoring based on log levels
-    assert result_clusters[0].severity_score == 8  # ERROR
-    assert result_clusters[1].severity_score == 10  # CRITICAL
-    assert result_clusters[2].severity_score == 5  # WARNING
-
-
-def test_calculate_fallback_severity(settings, mock_components, sample_logs):
-    """Test fallback severity calculation"""
-    engine = AnalysisEngine(settings)
-
-    # Test different log levels
-    assert engine._calculate_fallback_severity(sample_logs[2]) == 8  # ERROR
-    assert engine._calculate_fallback_severity(sample_logs[4]) == 10  # CRITICAL
-    assert engine._calculate_fallback_severity(sample_logs[1]) == 5  # WARNING
-    assert engine._calculate_fallback_severity(sample_logs[0]) == 2  # INFO
-
-    # Test unknown level by mocking the log level validation
-    with patch.object(LogRecord, '__post_init__'):
-        unknown_log = LogRecord(
-            id=999, timestamp=1640995200000, message="test", source="test",
-            metadata={}, embedding=[0.1] * 128, level="UNKNOWN"
-        )
-        assert engine._calculate_fallback_severity(unknown_log) == 3
-
+# Removed test_calculate_fallback_severity - fallback functionality removed
 
 def test_generate_health_score_no_logs(settings, mock_components):
     """Test health score generation with no logs"""
@@ -404,7 +358,6 @@ def test_generate_health_score_no_logs(settings, mock_components):
 
     assert health_score == 1.0
 
-
 def test_generate_health_score_with_logs(settings, mock_components, sample_logs, sample_clusters):
     """Test health score generation with logs"""
     engine = AnalysisEngine(settings)
@@ -412,7 +365,6 @@ def test_generate_health_score_with_logs(settings, mock_components, sample_logs,
     health_score = engine.generate_health_score(sample_logs, sample_clusters)
 
     assert 0.0 <= health_score <= 1.0
-
 
 def test_generate_health_score_all_errors(settings, mock_components):
     """Test health score with all error logs"""
@@ -429,7 +381,6 @@ def test_generate_health_score_all_errors(settings, mock_components):
 
     assert health_score < 0.5  # Should be low due to all errors
 
-
 def test_get_top_issues_empty_clusters(settings, mock_components):
     """Test getting top issues with empty clusters"""
     engine = AnalysisEngine(settings)
@@ -437,7 +388,6 @@ def test_get_top_issues_empty_clusters(settings, mock_components):
     top_issues = engine.get_top_issues([])
 
     assert top_issues == []
-
 
 def test_get_top_issues_with_clusters(settings, mock_components, sample_clusters):
     """Test getting top issues from clusters"""
@@ -454,7 +404,6 @@ def test_get_top_issues_with_clusters(settings, mock_components, sample_clusters
     assert all(isinstance(issue, AnalyzedLog) for issue in top_issues)
     assert top_issues[0].severity == 10  # Highest severity first
     assert top_issues[1].severity == 8
-
 
 def test_get_top_issues_max_limit(settings, mock_components):
     """Test top issues respects maximum limit"""
@@ -479,57 +428,6 @@ def test_get_top_issues_max_limit(settings, mock_components):
 
     assert len(top_issues) == 5  # Limited to max_issues
 
-
-def test_generate_summary_with_fallback_success(settings, mock_components, sample_logs):
-    """Test LLM summary generation success"""
-    engine = AnalysisEngine(settings)
-
-    mock_components['llm'].generate_daily_summary.return_value = "LLM generated summary"
-
-    summary = engine._generate_summary_with_fallback(100, 10, 20, [])
-
-    assert summary == "LLM generated summary"
-
-
-def test_generate_summary_with_fallback_failure(settings, mock_components, sample_logs):
-    """Test fallback summary when LLM fails"""
-    engine = AnalysisEngine(settings)
-
-    mock_components['llm'].generate_daily_summary.side_effect = Exception("LLM failed")
-
-    summary = engine._generate_summary_with_fallback(100, 10, 20, [])
-
-    assert "Processed 100 logs" in summary
-    assert "10.0% (10 errors)" in summary
-    assert "20.0% (20 warnings)" in summary
-
-
-def test_create_fallback_summary(settings, mock_components):
-    """Test fallback summary creation"""
-    engine = AnalysisEngine(settings)
-
-    # Test with high severity issues
-    high_severity_issues = [
-        AnalyzedLog(
-            log=LogRecord(id=1, timestamp=1640995200000, message="test", source="test",
-                         metadata={}, embedding=[0.1] * 128, level="ERROR"),
-            severity=8, reasoning="test", category="error"
-        ),
-        AnalyzedLog(
-            log=LogRecord(id=2, timestamp=1640995200000, message="test", source="test",
-                         metadata={}, embedding=[0.1] * 128, level="ERROR"),
-            severity=9, reasoning="test", category="error"
-        )
-    ]
-
-    summary = engine._create_fallback_summary(200, 20, 40, high_severity_issues)
-
-    assert "Processed 200 logs" in summary
-    assert "10.0% (20 errors)" in summary
-    assert "20.0% (40 warnings)" in summary
-    assert "2 high-severity issues" in summary
-
-
 def test_create_empty_result(settings, mock_components):
     """Test creation of empty analysis result"""
     engine = AnalysisEngine(settings)
@@ -545,7 +443,6 @@ def test_create_empty_result(settings, mock_components):
     assert result.health_score == 1.0
     assert "No logs found" in result.llm_summary
     assert result.execution_time == 1.5
-
 
 def test_analysis_engine_error_inheritance():
     """Test AnalysisEngineError is proper exception"""

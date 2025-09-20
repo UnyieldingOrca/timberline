@@ -67,7 +67,8 @@ def service_endpoints():
     """Service health endpoint configurations."""
     return [
         ("Milvus Metrics", "http://localhost:9091/healthz", 200),
-        ("llama.cpp", "http://localhost:8000/health", 200),
+        ("llama.cpp Embedding", "http://localhost:8000/health", 200),
+        ("llama.cpp Chat", "http://localhost:8001/health", 200),
         ("MinIO", "http://localhost:9000/minio/health/live", 200),
         ("Log Ingestor Health", "http://localhost:8080/api/v1/healthz", 200),
         ("Log Ingestor Metrics", "http://localhost:9092/metrics", 200),
@@ -160,4 +161,57 @@ def make_request_with_retry(url, method="GET", max_retries=3, retry_delay=1, tim
 def http_retry():
     """HTTP request helper with retry logic."""
     return make_request_with_retry
+
+
+# AI Analyzer fixtures
+@pytest.fixture(scope="session")
+def ai_analyzer_path():
+    """Path to AI Analyzer package."""
+    return Path(__file__).parents[2] / "ai-analyzer"
+
+
+@pytest.fixture(scope="session")
+def ai_analyzer_settings(milvus_host, milvus_port):
+    """AI Analyzer configuration settings for testing."""
+    return {
+        'milvus_host': milvus_host,
+        'milvus_port': int(milvus_port),
+        'milvus_collection': 'timberline_logs',
+        'analysis_window_hours': 24,  # Full day for testing to catch all logs
+        'max_logs_per_analysis': 1000,
+        'cluster_batch_size': 10,
+        'llm_endpoint': 'http://localhost:8001/v1',  # New chat service
+        'llm_model': 'llama-3.2-3b-instruct',
+        'llm_api_key': 'test-key',
+        'report_output_dir': '/tmp/test-reports',
+        'webhook_url': None
+    }
+
+
+@pytest.fixture
+def ai_analyzer_engine(ai_analyzer_path, ai_analyzer_settings):
+    """AI Analyzer engine instance for testing."""
+    import sys
+
+    # Add ai-analyzer to path
+    sys.path.insert(0, str(ai_analyzer_path))
+
+    # Import after adding to path
+    from analyzer.config.settings import Settings
+    from analyzer.analysis.engine import AnalysisEngine
+
+    settings = Settings.from_dict(ai_analyzer_settings)
+    engine = AnalysisEngine(settings)
+
+    yield engine
+
+    # Cleanup: remove from path
+    if str(ai_analyzer_path) in sys.path:
+        sys.path.remove(str(ai_analyzer_path))
+
+
+@pytest.fixture
+def realistic_log_data(log_generator):
+    """Generate realistic log scenarios for AI analysis testing."""
+    return log_generator.generate_realistic_error_scenarios()
 

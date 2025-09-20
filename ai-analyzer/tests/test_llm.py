@@ -12,7 +12,6 @@ from analyzer.llm.client import (
 from analyzer.config.settings import Settings
 from analyzer.models.log import LogRecord, LogCluster, AnalyzedLog
 
-
 @pytest.fixture
 def llm_settings():
     """Create test settings for LLM"""
@@ -23,7 +22,6 @@ def llm_settings():
         'milvus_port': 19530,
         'milvus_collection': 'test_logs'
     })
-
 
 @pytest.fixture
 def custom_endpoint_settings():
@@ -36,7 +34,6 @@ def custom_endpoint_settings():
         'milvus_port': 19530,
         'milvus_collection': 'test_logs'
     })
-
 
 @pytest.fixture
 def sample_logs():
@@ -56,7 +53,6 @@ def sample_logs():
         )
     ]
 
-
 @pytest.fixture
 def sample_clusters(sample_logs):
     """Create sample log clusters"""
@@ -73,7 +69,6 @@ def sample_clusters(sample_logs):
         )
     ]
 
-
 @pytest.fixture
 def mock_openai_response():
     """Create mock OpenAI response"""
@@ -84,7 +79,6 @@ def mock_openai_response():
     mock_response.usage.total_tokens = 100
     return mock_response
 
-
 def test_initialization_success(llm_settings):
     """Test successful LLM client initialization"""
     with patch('analyzer.llm.client.OpenAI') as mock_openai:
@@ -93,7 +87,6 @@ def test_initialization_success(llm_settings):
         assert client.settings == llm_settings
         assert client.model == 'gpt-4o-mini'
         mock_openai.assert_called_once_with(api_key='test-key-12345')
-
 
 def test_initialization_custom_endpoint(custom_endpoint_settings):
     """Test LLM client initialization with custom endpoint"""
@@ -106,7 +99,6 @@ def test_initialization_custom_endpoint(custom_endpoint_settings):
             api_key='test-key-12345',
             base_url='http://localhost:8000'
         )
-
 
 def test_initialization_missing_key():
     """Test LLM initialization without API key"""
@@ -124,7 +116,6 @@ def test_initialization_missing_key():
 
     with pytest.raises(LLMError, match="LLM API key is required"):
         LLMClient(settings)
-
 
 def test_call_llm_success(llm_settings, mock_openai_response):
     """Test successful LLM call"""
@@ -144,7 +135,6 @@ def test_call_llm_success(llm_settings, mock_openai_response):
 
         mock_client.chat.completions.create.assert_called_once()
 
-
 def test_call_llm_empty_response(llm_settings):
     """Test LLM call with empty response"""
     with patch('analyzer.llm.client.OpenAI') as mock_openai:
@@ -160,7 +150,6 @@ def test_call_llm_empty_response(llm_settings):
         with pytest.raises(LLMResponseError, match="Empty response from LLM"):
             client.call_llm("Test prompt")
 
-
 def test_call_llm_connection_error(llm_settings):
     """Test LLM call with connection error"""
     with patch('analyzer.llm.client.OpenAI') as mock_openai:
@@ -173,7 +162,6 @@ def test_call_llm_connection_error(llm_settings):
         with pytest.raises(LLMConnectionError, match="Failed to connect to LLM"):
             client.call_llm("Test prompt")
 
-
 def test_call_llm_general_error(llm_settings):
     """Test LLM call with general error"""
     with patch('analyzer.llm.client.OpenAI') as mock_openai:
@@ -185,7 +173,6 @@ def test_call_llm_general_error(llm_settings):
 
         with pytest.raises(LLMResponseError, match="LLM response error"):
             client.call_llm("Test prompt")
-
 
 def test_health_check_success(llm_settings, mock_openai_response):
     """Test successful health check"""
@@ -201,7 +188,6 @@ def test_health_check_success(llm_settings, mock_openai_response):
 
         assert result is True
 
-
 def test_health_check_failure(llm_settings):
     """Test health check failure"""
     with patch('analyzer.llm.client.OpenAI') as mock_openai:
@@ -213,7 +199,6 @@ def test_health_check_failure(llm_settings):
         result = client.health_check()
 
         assert result is False
-
 
 def test_analyze_log_batch_success(llm_settings, sample_logs):
     """Test successful log batch analysis"""
@@ -244,26 +229,18 @@ def test_analyze_log_batch_success(llm_settings, sample_logs):
         assert results[0].category == "error"
         assert results[1].severity == 2
 
-
 def test_analyze_log_batch_json_parse_error(llm_settings, sample_logs):
-    """Test log batch analysis with JSON parse error"""
+    """Test analyze_log_batch with JSON parse error - should raise exception"""
     with patch('analyzer.llm.client.OpenAI') as mock_openai:
-        mock_client = Mock()
-        mock_response = Mock()
-        mock_response.choices = [Mock()]
-        mock_response.choices[0].message.content = "Invalid JSON"
-        mock_response.usage = Mock()
-        mock_response.usage.total_tokens = 50
-        mock_client.chat.completions.create.return_value = mock_response
-        mock_openai.return_value = mock_client
-
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content='Invalid JSON{'))]
+        mock_openai.return_value.chat.completions.create.return_value = mock_response
+        
         client = LLMClient(llm_settings)
-        results = client.analyze_log_batch(sample_logs)
-
-        # Should fall back to rule-based analysis
-        assert len(results) == 3
-        assert all(isinstance(r, AnalyzedLog) for r in results)
-
+        
+        # Should raise JSONDecodeError when LLM returns invalid JSON
+        with pytest.raises(json.JSONDecodeError):
+            client.analyze_log_batch(sample_logs[:3])
 
 def test_analyze_log_batch_empty_input(llm_settings):
     """Test log batch analysis with empty input"""
@@ -272,7 +249,6 @@ def test_analyze_log_batch_empty_input(llm_settings):
         results = client.analyze_log_batch([])
 
         assert results == []
-
 
 def test_rank_severity_success(llm_settings, sample_clusters):
     """Test successful severity ranking"""
@@ -293,9 +269,8 @@ def test_rank_severity_success(llm_settings, sample_clusters):
 
         assert scores == [8, 5]
 
-
 def test_rank_severity_insufficient_scores(llm_settings, sample_clusters):
-    """Test severity ranking with insufficient scores"""
+    """Test severity ranking with insufficient scores - should raise exception"""
     ranking_response = {"severity_scores": [8]}  # Only one score for two clusters
 
     with patch('analyzer.llm.client.OpenAI') as mock_openai:
@@ -309,12 +284,9 @@ def test_rank_severity_insufficient_scores(llm_settings, sample_clusters):
         mock_openai.return_value = mock_client
 
         client = LLMClient(llm_settings)
-        scores = client.rank_severity(sample_clusters)
-
-        assert len(scores) == 2
-        assert scores[0] == 8
-        assert scores[1] == 5  # Fallback score for WARNING level
-
+        from analyzer.llm.client import LLMError
+        with pytest.raises(LLMError, match="returned 1 scores for 2 clusters"):
+            client.rank_severity(sample_clusters)
 
 def test_rank_severity_empty_input(llm_settings):
     """Test severity ranking with empty input"""
@@ -323,7 +295,6 @@ def test_rank_severity_empty_input(llm_settings):
         scores = client.rank_severity([])
 
         assert scores == []
-
 
 def test_generate_daily_summary_success(llm_settings, sample_logs):
     """Test successful daily summary generation"""
@@ -354,7 +325,6 @@ def test_generate_daily_summary_success(llm_settings, sample_logs):
         assert len(result) > 50
         assert "database" in result.lower()
 
-
 def test_generate_daily_summary_too_short(llm_settings):
     """Test daily summary with too short response"""
     with patch('analyzer.llm.client.OpenAI') as mock_openai:
@@ -372,7 +342,6 @@ def test_generate_daily_summary_too_short(llm_settings):
         with pytest.raises(LLMResponseError, match="Summary response too short"):
             client.generate_daily_summary(1000, 50, 100, [])
 
-
 def test_generate_daily_summary_llm_failure(llm_settings):
     """Test daily summary with LLM failure"""
     with patch('analyzer.llm.client.OpenAI') as mock_openai:
@@ -384,43 +353,6 @@ def test_generate_daily_summary_llm_failure(llm_settings):
 
         with pytest.raises(Exception, match="LLM failed"):
             client.generate_daily_summary(1000, 50, 100, [])
-
-
-def test_fallback_severity_calculation(llm_settings, sample_logs):
-    """Test fallback severity calculation"""
-    with patch('analyzer.llm.client.OpenAI'):
-        client = LLMClient(llm_settings)
-
-        # Test different log levels - sample_logs[0] has "connection" in message, so gets +1 boost
-        assert client._calculate_fallback_severity_from_log(sample_logs[0]) == 9  # ERROR (8) + connection boost (1)
-        assert client._calculate_fallback_severity_from_log(sample_logs[2]) == 5  # WARNING
-
-        # Test keyword boosting
-        crash_log = LogRecord(
-            id=99, timestamp=1640995200000, message='System crash detected',
-            source='system', metadata={}, embedding=[0.1] * 128, level='ERROR'
-        )
-        assert client._calculate_fallback_severity_from_log(crash_log) == 10  # 8 + 2
-
-        # Test basic ERROR level without keywords
-        basic_error_log = LogRecord(
-            id=100, timestamp=1640995200000, message='Something went wrong',
-            source='system', metadata={}, embedding=[0.1] * 128, level='ERROR'
-        )
-        assert client._calculate_fallback_severity_from_log(basic_error_log) == 8  # Just ERROR level
-
-
-def test_determine_category_from_level(llm_settings):
-    """Test category determination from log level"""
-    with patch('analyzer.llm.client.OpenAI'):
-        client = LLMClient(llm_settings)
-
-        assert client._determine_category_from_level("ERROR") == "error"
-        assert client._determine_category_from_level("CRITICAL") == "error"
-        assert client._determine_category_from_level("WARNING") == "warning"
-        assert client._determine_category_from_level("INFO") == "info"
-        assert client._determine_category_from_level("DEBUG") == "info"
-
 
 def test_create_analysis_prompt(llm_settings, sample_logs):
     """Test analysis prompt creation"""
@@ -435,7 +367,6 @@ def test_create_analysis_prompt(llm_settings, sample_logs):
         assert "JSON" in prompt
         assert str(len(sample_logs)) in prompt
 
-
 def test_create_ranking_prompt(llm_settings, sample_clusters):
     """Test ranking prompt creation"""
     with patch('analyzer.llm.client.OpenAI'):
@@ -446,7 +377,6 @@ def test_create_ranking_prompt(llm_settings, sample_clusters):
         assert "Rank these 2 log clusters" in prompt
         assert "severity_scores" in prompt
         assert "JSON" in prompt
-
 
 def test_create_summary_prompt(llm_settings, sample_logs):
     """Test summary prompt creation"""
@@ -470,7 +400,6 @@ def test_create_summary_prompt(llm_settings, sample_logs):
         assert "Top issues:" in prompt
         assert "Database connection failed" in prompt
 
-
 def test_parse_analysis_response_success(llm_settings, sample_logs):
     """Test successful analysis response parsing"""
     with patch('analyzer.llm.client.OpenAI'):
@@ -492,9 +421,8 @@ def test_parse_analysis_response_success(llm_settings, sample_logs):
         assert results[1].severity == 3
         assert results[2].category == "warning"
 
-
 def test_parse_analysis_response_missing_analyses(llm_settings, sample_logs):
-    """Test analysis response parsing with missing analyses"""
+    """Test analysis response parsing with missing analyses - should raise exception"""
     with patch('analyzer.llm.client.OpenAI'):
         client = LLMClient(llm_settings)
 
@@ -505,13 +433,10 @@ def test_parse_analysis_response_missing_analyses(llm_settings, sample_logs):
             ]
         }
 
-        results = client._parse_analysis_response(sample_logs, analysis_data)
-
-        assert len(results) == 3
-        assert results[0].severity == 9  # From LLM
-        assert results[1].severity == 2   # Fallback for INFO level
-        assert results[2].severity == 5   # Fallback for WARNING level
-
+        # Should raise LLMError when analysis is missing for logs
+        from analyzer.llm.client import LLMError
+        with pytest.raises(LLMError, match="Missing analysis for log 2"):
+            client._parse_analysis_response(sample_logs, analysis_data)
 
 def test_llm_response_dataclass():
     """Test LLMResponse dataclass"""
@@ -526,7 +451,6 @@ def test_llm_response_dataclass():
     assert response.tokens_used == 100
     assert response.model_name == "gpt-4"
     assert response.response_time == 1.5
-
 
 def test_llm_error_inheritance():
     """Test LLM error classes"""

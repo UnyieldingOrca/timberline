@@ -111,7 +111,7 @@ class MilvusQueryEngine:
 
             results = self._collection.query(
                 expr=expr,
-                output_fields=["id", "timestamp", "message", "source", "metadata", "embedding", "level"],
+                output_fields=["id", "timestamp", "message", "source", "metadata", "embedding"],
                 limit=limit
             )
 
@@ -119,14 +119,28 @@ class MilvusQueryEngine:
             logs = []
             for result in results:
                 try:
+                    # Extract metadata and level
+                    metadata = result.get("metadata", {})
+                    if isinstance(metadata, str):
+                        import json
+                        try:
+                            metadata = json.loads(metadata)
+                        except json.JSONDecodeError:
+                            metadata = {}
+
+                    # Extract level from metadata, with fallback logic
+                    level = "INFO"  # default
+                    if isinstance(metadata, dict):
+                        level = metadata.get("level") or metadata.get("log_level") or "INFO"
+
                     log = LogRecord(
                         id=result.get("id", 0),
                         timestamp=result.get("timestamp", 0),
                         message=result.get("message", ""),
                         source=result.get("source", ""),
-                        metadata=result.get("metadata", {}),
+                        metadata=metadata,
                         embedding=result.get("embedding", []),
-                        level=result.get("level", "INFO")
+                        level=level
                     )
                     logs.append(log)
                 except Exception as e:

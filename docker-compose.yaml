@@ -97,6 +97,37 @@ services:
     networks:
       - timberline
 
+  llama-cpp-chat:
+    container_name: timberline-llama-cpp-chat
+    image: ghcr.io/ggml-org/llama.cpp:server
+    command:
+      - -m
+      - /models/phi-3-mini-4k-instruct.Q4_K_M.gguf
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8001"
+      - --threads
+      - "4"
+      - --ctx-size
+      - "4096"
+      - --temp
+      - "0.7"
+      - --repeat-penalty
+      - "1.1"
+    ports:
+      - "8001:8001"
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/llama-models:/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 15s
+      start_period: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - timberline
+
   log-ingestor:
     container_name: timberline-log-ingestor
     build:

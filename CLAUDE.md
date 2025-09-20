@@ -8,7 +8,7 @@ Timberline is an AI-powered log analysis platform for Kubernetes environments co
 - **Log Collector** (Go DaemonSet) - Currently implemented
 - **Log Ingestor** (Go Service) - Currently implemented
 - **Vector Database** (Milvus) - Integrated via Docker
-- **AI Analysis Engine** (Python Service/Job) - Planned
+- **AI Analysis Engine** (Python Service/Job) - Currently implemented
 - **Web Dashboard** - Planned
 
 ## Architecture
@@ -127,16 +127,17 @@ pytest tests/docker/test_integration.py -v -m "docker and slow"
 
 The integration tests cover:
 - Service health checks (log-collector, log-ingestor, Milvus, llama.cpp, etcd, MinIO)
-- Log ingestion API endpoints 
+- Log ingestion API endpoints
 - Complete pipeline data flow from files → collector → ingestor → Milvus
 - Embedding generation and semantic search
 - Data persistence verification
 - Metrics collection endpoints
+- AI analysis engine integration and log clustering
+- LLM-based severity scoring and report generation
 
 The collector includes comprehensive metrics and health endpoints for monitoring in production.
 
 ## Future Components
 
 Refer to SPEC.md for detailed specifications of planned components:
-- Python-based AI Analysis Engine with LLM integration
 - Web dashboard for visualization

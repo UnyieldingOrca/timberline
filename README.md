@@ -10,7 +10,7 @@ Timberline consists of several key components that work together to provide end-
 - **Log Collector**: A high-performance Go-based DaemonSet that collects logs from Kubernetes containers
 - **Log Ingestor**: Processes and stores incoming log data
 - **Query Engine**: Enables fast querying and retrieval of log data
-- **AI Analysis Engine**: Provides intelligent analysis and anomaly detection
+- **AI Analysis Engine**: Provides intelligent analysis and anomaly detection (implemented)
 - **Reporting Service**: Generates actionable insights and reports
 - **Web Dashboard**: User interface for visualization and management
 
@@ -29,9 +29,22 @@ For detailed information about the Log Collector including configuration, deploy
 - Prometheus metrics and health endpoints
 - TLS support and secure communication
 
+### AI Analysis Engine
+
+The AI Analysis Engine is a Python-based service that performs intelligent log analysis using LLM-powered insights. It analyzes logs stored in the Milvus vector database to identify concerning patterns, rank severity, and generate actionable reports.
+
+**Key Features:**
+- Real-time log clustering and pattern detection
+- LLM-based severity scoring and categorization
+- Automated daily analysis reports
+- Integration with local and cloud LLM providers
+- Comprehensive health monitoring and metrics
+
+For detailed information about the AI Analysis Engine, see the [AI Analyzer documentation](ai-analyzer/SPEC.md).
+
 ### Other Components
 
-*Additional components (Log Ingestor, Query Engine, AI Analysis Engine, etc.) will be documented as they are developed.*
+*Additional components (Log Ingestor, Query Engine, Reporting Service, etc.) will be documented as they are developed.*
 
 ## Quick Start
 
