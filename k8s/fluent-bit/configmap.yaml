@@ -37,6 +37,11 @@ data:
         Keep_Log            Off
         Buffer_Size         256k
 
+    [FILTER]
+        Name              record_modifier
+        Match             *
+        Record            source fluent-bit
+
     [OUTPUT]
         Name              http
         Match             *
@@ -44,8 +49,6 @@ data:
         Port              8080
         URI               /api/v1/logs/stream
         Format            json_lines
-        json_date_key     timestamp
-        json_date_format  epoch
         Header            Content-Type application/x-ndjson
 
   parsers.conf: |

@@ -13,6 +13,44 @@ import (
 	"github.com/timberline/log-ingestor/internal/storage"
 )
 
+// FluentBitLogEntry represents the standard format that Fluent Bit sends
+type FluentBitLogEntry struct {
+	Date       float64                `json:"date,omitempty"`       // Unix timestamp with microseconds
+	Timestamp  int64                  `json:"timestamp,omitempty"`  // Alternative timestamp field
+	Log        string                 `json:"log"`                  // The actual log message
+	Kubernetes map[string]interface{} `json:"kubernetes,omitempty"` // Kubernetes metadata
+	Source     string                 `json:"source,omitempty"`     // Source identifier
+}
+
+// transformFluentBitEntry converts a Fluent Bit log entry to our internal format
+func (fb *FluentBitLogEntry) transformToLogEntry() *models.LogEntry {
+	entry := &models.LogEntry{
+		Message:  fb.Log,
+		Source:   fb.Source,
+		Metadata: fb.Kubernetes,
+	}
+
+	// Handle timestamp - Fluent Bit can send either 'date' (float64) or 'timestamp' (int64)
+	if fb.Date > 0 {
+		// Convert float64 Unix timestamp (seconds) to int64 milliseconds
+		entry.Timestamp = int64(fb.Date * 1000)
+	} else if fb.Timestamp > 0 {
+		// Check if timestamp is in seconds or milliseconds
+		if fb.Timestamp < 1e12 { // Less than year 2001 in milliseconds means it's in seconds
+			entry.Timestamp = fb.Timestamp * 1000
+		} else {
+			entry.Timestamp = fb.Timestamp
+		}
+	}
+
+	// Ensure source is set if not provided
+	if entry.Source == "" {
+		entry.Source = "fluent-bit"
+	}
+
+	return entry
+}
+
 type StreamHandler struct {
 	storage      storage.StorageInterface
 	logger       *logrus.Logger
@@ -68,7 +106,7 @@ func NewStreamHandler(storage storage.StorageInterface, maxBatchSize int) *Strea
 
 	return &StreamHandler{
 		storage:      storage,
-		logger:       logrus.New(),
+		logger:       logrus.StandardLogger(),
 		metrics:      metrics,
 		maxBatchSize: maxBatchSize,
 	}
@@ -133,13 +171,31 @@ func (h *StreamHandler) processStream(r *http.Request) (int, error) {
 			continue
 		}
 
-		// Parse JSON line
-		var logEntry models.LogEntry
-		if err := json.Unmarshal([]byte(line), &logEntry); err != nil {
-			h.logger.WithError(err).WithField("line", line).Warn("Failed to parse JSON line")
-			h.metrics.invalidLines.Inc()
-			continue
+		// DEBUG: Log raw line from Fluent Bit
+		h.logger.WithField("raw_line", line).Debug("Received raw line from Fluent Bit")
+
+		// Try to parse as LogEntry format first (for backward compatibility)
+		var logEntry *models.LogEntry
+		var directLogEntry models.LogEntry
+
+		if err := json.Unmarshal([]byte(line), &directLogEntry); err == nil && directLogEntry.Message != "" {
+			// Successfully parsed as direct LogEntry format
+			logEntry = &directLogEntry
+		} else {
+			// Try to parse as Fluent Bit format
+			var fluentBitEntry FluentBitLogEntry
+			if err := json.Unmarshal([]byte(line), &fluentBitEntry); err != nil {
+				h.logger.WithError(err).WithField("line", line).Warn("Failed to parse JSON line")
+				h.metrics.invalidLines.Inc()
+				continue
+			}
+
+			// Transform Fluent Bit format to our internal format
+			logEntry = fluentBitEntry.transformToLogEntry()
 		}
+
+		// DEBUG: Log transformed entry structure
+		h.logger.WithField("transformed_entry", logEntry).Debug("Transformed log entry structure")
 
 		// Validate log entry
 		if err := logEntry.Validate(); err != nil {
@@ -148,7 +204,7 @@ func (h *StreamHandler) processStream(r *http.Request) (int, error) {
 			continue
 		}
 
-		batch = append(batch, &logEntry)
+		batch = append(batch, logEntry)
 		h.metrics.linesProcessed.Inc()
 
 		// Process batch when it reaches max size
