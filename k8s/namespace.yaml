@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: timberline
+  labels:
+    name: timberline
+    app.kubernetes.io/name: timberline
+    app.kubernetes.io/version: v1.0.0

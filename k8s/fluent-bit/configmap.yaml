@@ -1,0 +1,69 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluent-bit-config
+  namespace: timberline
+  labels:
+    app: fluent-bit
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush         5
+        Daemon        off
+        Log_Level     info
+        Parsers_File  parsers.conf
+        HTTP_Server   On
+        HTTP_Listen   0.0.0.0
+        HTTP_Port     2020
+
+    [INPUT]
+        Name              tail
+        Path              /var/log/containers/*.log
+        Parser            docker
+        Tag               kube.*
+        Refresh_Interval  5
+        Mem_Buf_Limit     5MB
+        Skip_Long_Lines   On
+
+    [INPUT]
+        Name              tail
+        Path              /var/log/pods/*/*/*.log
+        Parser            docker
+        Tag               kube.*
+        Refresh_Interval  5
+        Mem_Buf_Limit     5MB
+        Skip_Long_Lines   On
+
+    [FILTER]
+        Name                kubernetes
+        Match               kube.*
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude Off
+        Annotations         Off
+        Labels              On
+
+    [OUTPUT]
+        Name              http
+        Match             *
+        Host              log-ingestor
+        Port              8080
+        URI               /api/v1/logs/stream
+        Format            json_lines
+        json_date_key     timestamp
+        json_date_format  epoch
+        Header            Content-Type application/x-ndjson
+
+  parsers.conf: |
+    [PARSER]
+        Name        docker
+        Format      json
+        Time_Key    time
+        Time_Format %Y-%m-%dT%H:%M:%S.%L
+        Time_Keep   On
+
+    [PARSER]
+        Name        syslog
+        Format      regex
+        Regex       ^\<(?<pri>[0-9]+)\>(?<time>[^ ]* {1,2}[^ ]* [^ ]*) (?<host>[^ ]*) (?<ident>[a-zA-Z0-9_\/\.\-]*)(?:\[(?<pid>[0-9]+)\])?(?:[^\:]*\:)? *(?<message>.*)$
+        Time_Key    time
+        Time_Format %b %d %H:%M:%S

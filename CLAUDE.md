@@ -18,14 +18,20 @@ The system follows a pipeline architecture where logs flow from Kubernetes pods 
 ## Development Commands
 
 ### Top-Level Commands
-Use the top-level Makefile for Docker and integration testing:
+Use the top-level Makefile for Kubernetes integration testing:
 
 ```bash
 make help             # Show all available commands
-make docker-up        # Start Docker integration environment
-make docker-down      # Stop Docker integration environment
-make docker-test      # Start Docker services and run integration tests
-make test-integration # Run Docker integration tests
+
+# Kind-based testing (Kubernetes in Docker)
+make kind-setup       # Setup kind cluster for integration testing
+make kind-test        # Setup kind cluster and run integration tests
+make test-integration # Run integration tests against kind cluster
+make test-kind        # Run integration tests against kind cluster
+make kind-down        # Delete kind cluster
+
+# Dependencies
+make download-models  # Download required AI models
 make install-test-deps # Install Python test dependencies
 ```
 
@@ -64,7 +70,7 @@ timberline/
 │   └── go.mod                 # Go dependencies
 ├── tests/                      # Integration test suite
 ├── scripts/                    # Build and test automation scripts
-├── docker-compose.yaml         # Docker services for development
+├── k8s/                        # Kubernetes manifests for all services
 ├── SPEC.md                     # Detailed component specifications
 └── README.md                  # Project overview
 ```
@@ -75,7 +81,7 @@ timberline/
 - **Go 1.23+** with modules for log ingestor
 - **JSON Lines** format for efficient log streaming
 - **Milvus** vector database for embedding storage
-- **Docker Compose** for development environment
+- **Kind** (Kubernetes in Docker) for testing environment
 - **Python/pytest** for integration testing
 
 ## Configuration
@@ -95,31 +101,34 @@ cd log-ingestor && make test     # Test log ingestor
 ```
 
 ### Integration Tests
-Comprehensive Docker-based integration tests for the complete pipeline:
+Comprehensive Kubernetes-based integration tests for the complete pipeline using kind:
 
 ```bash
-# Start Docker environment and run integration tests
-make docker-test
+# Setup kind cluster and run integration tests
+make kind-test
 
-# Run integration tests (Docker must be running)
+# Run integration tests against existing kind cluster
 make test-integration
 
-# Start/stop Docker environment manually
-make docker-up
-make docker-down
+# Setup kind cluster manually
+make kind-setup
+
+# Delete kind cluster
+make kind-down
 
 # Install Python test dependencies
 make install-test-deps
 
-# Manual test execution
-./scripts/run-integration-tests.sh --parallel
+# Manual test execution against kind
+./scripts/run-kind-integration-tests.sh --show-logs
 
 # Run specific test classes
-pytest tests/docker/test_integration.py::TestLogIngestor -v -m docker
-pytest tests/docker/test_integration.py::TestDataPersistence -v -m docker
+pytest tests/docker/test_log_ingestor.py -v
+pytest tests/docker/test_embedding_service.py -v
+pytest tests/docker/test_ai_analyzer_integration.py -v
 
-# Run only pipeline tests (slow)
-pytest tests/docker/test_integration.py -v -m "docker and slow"
+# Run tests with specific markers
+pytest tests/docker/ -v -m "not slow"
 ```
 
 The integration tests cover:

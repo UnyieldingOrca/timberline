@@ -1,11 +1,12 @@
 #!/bin/bash
 
 # Download models for Timberline AI analyzer
-# This script downloads the required models for both embedding and chat services
+# This script downloads the required models for Kubernetes deployment
+# Models are downloaded to a local cache and loaded into kind nodes
 
 set -e
 
-MODELS_DIR="./volumes/llama-models"
+MODELS_DIR="./models-cache"
 EMBEDDING_MODEL="nomic-embed-text-v1.5.f16.gguf"
 CHAT_MODEL="phi-3-mini-4k-instruct.Q4_K_M.gguf"
 
@@ -56,4 +57,4 @@ echo "📊 Model Information:"
 echo "   Embedding Model: $EMBEDDING_MODEL (~274MB) - Used for log vectorization"
 echo "   Chat Model: $CHAT_MODEL (~2.4GB) - Used for AI analysis and reasoning"
 echo ""
-echo "💡 You can now start the services with: make docker-up"
+echo "💡 You can now start the services with: make kind-setup"

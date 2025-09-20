@@ -1,5 +1,6 @@
 """
-Pytest configuration and fixtures for Docker integration tests.
+Pytest configuration and fixtures for Kubernetes integration tests.
+Provides fixtures for testing against kind clusters.
 """
 
 import pytest
@@ -13,7 +14,7 @@ from .log_generator import LogGenerator
 @pytest.fixture(scope="session")
 def test_logs_dir():
     """Provide test logs directory path."""
-    return Path(__file__).parents[2] / "volumes" / "test-logs"
+    return Path(__file__).parents[2] / "test-logs" / "kind"
 
 
 @pytest.fixture
@@ -64,7 +65,7 @@ def milvus_port():
 # Service health check fixtures
 @pytest.fixture(scope="session")
 def service_endpoints():
-    """Service health endpoint configurations."""
+    """Service health endpoint configurations for kind cluster."""
     return [
         ("Milvus Metrics", "http://localhost:9091/healthz", 200),
         ("llama.cpp Embedding", "http://localhost:8000/health", 200),
@@ -72,15 +73,15 @@ def service_endpoints():
         ("MinIO", "http://localhost:9000/minio/health/live", 200),
         ("Log Ingestor Health", "http://localhost:8080/api/v1/healthz", 200),
         ("Log Ingestor Metrics", "http://localhost:9092/metrics", 200),
-        ("Log Collector Metrics", "http://localhost:9090/metrics", 200)
+        ("Fluent Bit Health", "http://localhost:2020/api/v1/health", 200)
     ]
 
 
 @pytest.fixture(scope="session")
 def metrics_endpoints():
-    """Metrics endpoint configurations."""
+    """Metrics endpoint configurations for kind cluster."""
     return [
-        ("Log Collector", "http://localhost:9090/metrics"),
+        ("Fluent Bit", "http://localhost:2020/api/v1/metrics"),
         ("Log Ingestor", "http://localhost:9092/metrics"),
         ("Milvus Health", "http://localhost:9091/healthz")
     ]
@@ -172,15 +173,15 @@ def ai_analyzer_path():
 
 @pytest.fixture(scope="session")
 def ai_analyzer_settings(milvus_host, milvus_port):
-    """AI Analyzer configuration settings for testing."""
+    """AI Analyzer configuration settings for kind testing."""
     return {
         'milvus_host': milvus_host,
         'milvus_port': int(milvus_port),
         'milvus_collection': 'timberline_logs',
-        'analysis_window_hours': 24,  # Full day for testing to catch all logs
+        'analysis_window_hours': 24,
         'max_logs_per_analysis': 1000,
         'cluster_batch_size': 10,
-        'llm_endpoint': 'http://localhost:8001/v1',  # New chat service
+        'llm_endpoint': 'http://localhost:8001/v1',
         'llm_model': 'llama-3.2-3b-instruct',
         'llm_api_key': 'test-key',
         'report_output_dir': '/tmp/test-reports',

@@ -1,7 +1,7 @@
 # Timberline Log Analysis Platform
 # Top-level Makefile for building and testing the entire project
 
-.PHONY: help build test clean docker-up docker-down docker-test install-deps lint fmt check
+.PHONY: help build test clean kind-setup kind-test kind-down install-deps lint fmt check
 
 # Default target - this ensures help is the default when running 'make' without arguments
 .DEFAULT_GOAL := help
@@ -13,25 +13,27 @@ help: ## Show this help message
 	@echo "Available targets:"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-# Docker management
-docker-up: download-models ## Start Docker integration environment
-	@echo "🐳 Starting Docker integration environment..."
-	./scripts/docker-compose-up.sh
-
 download-models: ## Download required AI models
 	@echo "📦 Downloading AI models..."
 	./scripts/download-models.sh
 
-docker-down: ## Stop Docker integration environment
-	@echo "🐳 Stopping Docker integration environment..."
-	docker compose down
+# Kind (Kubernetes in Docker) management
+kind-setup: ## Setup kind cluster for integration testing
+	@echo "🚀 Setting up kind cluster for integration testing..."
+	./scripts/kind-setup.sh
 
-docker-test: docker-up test-integration ## Start Docker services and run integration tests
-	@echo "✅ Docker integration test complete"
+kind-test: kind-setup test-kind ## Setup kind cluster and run integration tests
+	@echo "✅ Kind integration test complete"
 
-test-integration:  ## Run Docker integration tests
-	@echo "🧪 Running Docker integration tests..."
-	./scripts/run-integration-tests.sh
+test-integration: test-kind ## Run integration tests against kind cluster (alias)
+
+test-kind: ## Run integration tests against kind cluster
+	@echo "🧪 Running integration tests against kind cluster..."
+	./scripts/run-kind-integration-tests.sh
+
+kind-down: ## Delete kind cluster
+	@echo "🗑️ Deleting kind cluster..."
+	kind delete cluster --name timberline-test
 
 install-test-deps: ## Install Python test dependencies
 	@echo "📦 Installing Python test dependencies..."

@@ -1,12 +1,13 @@
 """
 AI Analyzer integration tests with complete pipeline.
-Tests end-to-end flow: log generation -> collector -> ingestor -> Milvus -> AI analysis.
+Tests end-to-end flow: log generation -> Fluent Bit -> ingestor -> Milvus -> AI analysis.
 """
 
 import pytest
 import time
 from datetime import date
 import json
+from .test_helpers import ingest_logs_via_stream
 
 
 @pytest.mark.docker
@@ -17,7 +18,7 @@ class TestAIAnalyzerIntegration:
                                               ingestor_url, ai_analyzer_engine):
         """Test complete pipeline: logs -> collector -> ingestor -> Milvus -> AI analysis."""
 
-        # Step 1: Ingest realistic log scenarios via the API
+        # Step 1: Ingest realistic log scenarios via the streaming API
         print(f"\n=== Ingesting {len(realistic_log_data)} realistic log scenarios ===")
 
         batch_size = 5
@@ -25,13 +26,7 @@ class TestAIAnalyzerIntegration:
 
         for i in range(0, len(realistic_log_data), batch_size):
             batch = realistic_log_data[i:i + batch_size]
-            response = http_retry(
-                f"{ingestor_url}/api/v1/logs/batch",
-                method="POST",
-                json={"logs": batch},
-                headers={"Content-Type": "application/json"},
-                timeout=30
-            )
+            response = ingest_logs_via_stream(ingestor_url, batch, timeout=30)
             assert response.status_code == 200, f"Log ingestion failed: {response.text}"
 
             result = response.json()
@@ -177,18 +172,12 @@ class TestAIAnalyzerPerformance:
 
         print(f"Generated {len(all_logs)} total logs for high volume test")
 
-        # Ingest all logs
+        # Ingest all logs via streaming
         print("=== Ingesting high volume logs ===")
         batch_size = 20
         for i in range(0, len(all_logs), batch_size):
             batch = all_logs[i:i + batch_size]
-            response = http_retry(
-                f"{ingestor_url}/api/v1/logs/batch",
-                method="POST",
-                json={"logs": batch},
-                headers={"Content-Type": "application/json"},
-                timeout=30
-            )
+            response = ingest_logs_via_stream(ingestor_url, batch, timeout=30)
             assert response.status_code == 200
 
         print("Waiting for processing...")
