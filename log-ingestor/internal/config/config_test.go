@@ -45,6 +45,9 @@ func TestNewConfig(t *testing.T) {
 	if config.RateLimitRPS != 1000 {
 		t.Errorf("Expected RateLimitRPS to be 1000, got %d", config.RateLimitRPS)
 	}
+	if config.SimilarityThreshold != 0.95 {
+		t.Errorf("Expected SimilarityThreshold to be 0.95, got %f", config.SimilarityThreshold)
+	}
 }
 
 func TestNewConfigWithEnvironmentVariables(t *testing.T) {
@@ -53,16 +56,17 @@ func TestNewConfigWithEnvironmentVariables(t *testing.T) {
 
 	// Set test environment variables
 	testEnvs := map[string]string{
-		"SERVER_PORT":       "9080",
-		"LOG_LEVEL":         "debug",
-		"MILVUS_ADDRESS":    "localhost:19530",
-		"BATCH_SIZE":        "200",
-		"BATCH_TIMEOUT":     "10s",
-		"MAX_REQUEST_SIZE":  "20971520", // 20MB
-		"METRICS_PORT":      "9091",
-		"READ_TIMEOUT":      "15s",
-		"WRITE_TIMEOUT":     "20s",
-		"RATE_LIMIT_RPS":    "500",
+		"SERVER_PORT":          "9080",
+		"LOG_LEVEL":            "debug",
+		"MILVUS_ADDRESS":       "localhost:19530",
+		"BATCH_SIZE":           "200",
+		"BATCH_TIMEOUT":        "10s",
+		"MAX_REQUEST_SIZE":     "20971520", // 20MB
+		"METRICS_PORT":         "9091",
+		"READ_TIMEOUT":         "15s",
+		"WRITE_TIMEOUT":        "20s",
+		"RATE_LIMIT_RPS":       "500",
+		"SIMILARITY_THRESHOLD": "0.90",
 	}
 
 	for key, value := range testEnvs {
@@ -101,6 +105,9 @@ func TestNewConfigWithEnvironmentVariables(t *testing.T) {
 	}
 	if config.RateLimitRPS != 500 {
 		t.Errorf("Expected RateLimitRPS to be 500, got %d", config.RateLimitRPS)
+	}
+	if config.SimilarityThreshold != 0.90 {
+		t.Errorf("Expected SimilarityThreshold to be 0.90, got %f", config.SimilarityThreshold)
 	}
 }
 
@@ -188,6 +195,36 @@ func TestValidate(t *testing.T) {
 			expectError: true,
 			errorField:  "RATE_LIMIT_RPS",
 		},
+		{
+			name: "Invalid SimilarityThreshold - negative",
+			config: &Config{
+				ServerPort:          8080,
+				MetricsPort:         9090,
+				BatchSize:           100,
+				MaxRequestSize:      1024,
+				RateLimitRPS:        1000,
+				EmbeddingEndpoint:   "http://test",
+				EmbeddingDimension:  768,
+				SimilarityThreshold: -0.1,
+			},
+			expectError: true,
+			errorField:  "SIMILARITY_THRESHOLD",
+		},
+		{
+			name: "Invalid SimilarityThreshold - too high",
+			config: &Config{
+				ServerPort:          8080,
+				MetricsPort:         9090,
+				BatchSize:           100,
+				MaxRequestSize:      1024,
+				RateLimitRPS:        1000,
+				EmbeddingEndpoint:   "http://test",
+				EmbeddingDimension:  768,
+				SimilarityThreshold: 1.1,
+			},
+			expectError: true,
+			errorField:  "SIMILARITY_THRESHOLD",
+		},
 	}
 
 	for _, tt := range tests {
@@ -222,8 +259,8 @@ func TestSetupLogging(t *testing.T) {
 	}()
 
 	tests := []struct {
-		name        string
-		logLevel    string
+		name          string
+		logLevel      string
 		expectedLevel logrus.Level
 	}{
 		{"Debug level", "debug", logrus.DebugLevel},
@@ -353,6 +390,30 @@ func TestGetEnvHelpers(t *testing.T) {
 			t.Errorf("Expected 5s (default), got %v", result)
 		}
 	})
+
+	t.Run("getEnvAsFloat32", func(t *testing.T) {
+		// Test with default
+		result := getEnvAsFloat32("NON_EXISTENT_FLOAT32", 0.75)
+		if result != 0.75 {
+			t.Errorf("Expected 0.75, got %f", result)
+		}
+
+		// Test with valid float32
+		_ = os.Setenv("TEST_FLOAT32", "0.123")
+		defer func() { _ = os.Unsetenv("TEST_FLOAT32") }()
+		result = getEnvAsFloat32("TEST_FLOAT32", 0.75)
+		if result != 0.123 {
+			t.Errorf("Expected 0.123, got %f", result)
+		}
+
+		// Test with invalid float32 (should use default)
+		_ = os.Setenv("TEST_INVALID_FLOAT32", "not_a_float")
+		defer func() { _ = os.Unsetenv("TEST_INVALID_FLOAT32") }()
+		result = getEnvAsFloat32("TEST_INVALID_FLOAT32", 0.75)
+		if result != 0.75 {
+			t.Errorf("Expected 0.75 (default), got %f", result)
+		}
+	})
 }
 
 // Helper function to clear test environment variables
@@ -360,9 +421,9 @@ func clearTestEnvs() {
 	envs := []string{
 		"SERVER_PORT", "LOG_LEVEL", "MILVUS_ADDRESS", "BATCH_SIZE",
 		"BATCH_TIMEOUT", "MAX_REQUEST_SIZE", "METRICS_PORT", "READ_TIMEOUT",
-		"WRITE_TIMEOUT", "RATE_LIMIT_RPS", "TEST_STRING", "TEST_INT",
-		"TEST_INVALID_INT", "TEST_INT64", "TEST_INVALID_INT64", 
-		"TEST_DURATION", "TEST_INVALID_DURATION",
+		"WRITE_TIMEOUT", "RATE_LIMIT_RPS", "SIMILARITY_THRESHOLD", "TEST_STRING", "TEST_INT",
+		"TEST_INVALID_INT", "TEST_INT64", "TEST_INVALID_INT64",
+		"TEST_DURATION", "TEST_INVALID_DURATION", "TEST_FLOAT32", "TEST_INVALID_FLOAT32",
 	}
 	for _, env := range envs {
 		_ = os.Unsetenv(env)

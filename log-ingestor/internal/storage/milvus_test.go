@@ -36,7 +36,7 @@ func TestNewMilvusClient(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
 	dimension := 768
 
-	client := NewMilvusClient(address, mockEmbedding, dimension)
+	client := NewMilvusClient(address, mockEmbedding, dimension, 0.95)
 
 	assert.NotNil(t, client)
 	assert.Equal(t, "timberline_logs", client.collection)
@@ -48,7 +48,7 @@ func TestNewMilvusClient(t *testing.T) {
 
 func TestMilvusClient_StoreBatch_ValidationErrors(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768)
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -94,8 +94,8 @@ func TestMilvusClient_StoreBatch_ValidationErrors(t *testing.T) {
 
 func TestMilvusClient_StoreBatch_NotConnected(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768)
-	
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95)
+
 	batch := &models.LogBatch{
 		Logs: []*models.LogEntry{
 			{
@@ -114,9 +114,9 @@ func TestMilvusClient_StoreBatch_NotConnected(t *testing.T) {
 
 func TestMilvusClient_StoreBatch_EmbeddingFailure(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768)
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95)
 	client.connected = true // Simulate connection
-	
+
 	batch := &models.LogBatch{
 		Logs: []*models.LogEntry{
 			{
@@ -141,9 +141,9 @@ func TestMilvusClient_StoreBatch_EmbeddingFailure(t *testing.T) {
 
 func TestMilvusClient_StoreBatch_EmbeddingCountMismatch(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768)
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95)
 	client.connected = true // Simulate connection
-	
+
 	batch := &models.LogBatch{
 		Logs: []*models.LogEntry{
 			{
@@ -174,7 +174,7 @@ func TestMilvusClient_StoreBatch_EmbeddingCountMismatch(t *testing.T) {
 
 func TestMilvusClient_HealthCheck_NotConnected(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768)
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95)
 
 	err := client.HealthCheck(context.Background())
 	assert.Error(t, err)
@@ -183,7 +183,7 @@ func TestMilvusClient_HealthCheck_NotConnected(t *testing.T) {
 
 func TestMilvusClient_CreateCollection_NotConnected(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768)
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95)
 
 	err := client.CreateCollection(context.Background())
 	assert.Error(t, err)
@@ -192,7 +192,7 @@ func TestMilvusClient_CreateCollection_NotConnected(t *testing.T) {
 
 func TestMilvusClient_LoadCollection_NotConnected(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768)
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95)
 
 	err := client.LoadCollection(context.Background())
 	assert.Error(t, err)
@@ -201,7 +201,7 @@ func TestMilvusClient_LoadCollection_NotConnected(t *testing.T) {
 
 func TestMilvusClient_Close(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768)
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95)
 
 	// Test closing when client is nil (should not error)
 	err := client.Close()
@@ -216,11 +216,12 @@ func TestMilvusClient_SchemaConstants(t *testing.T) {
 	assert.Equal(t, "source", FieldSource)
 	assert.Equal(t, "metadata", FieldMetadata)
 	assert.Equal(t, "embedding", FieldEmbedding)
-	
+
 	assert.Equal(t, int32(1), DefaultShards)
-	assert.Equal(t, "IVF_FLAT", IndexType)
-	assert.Equal(t, "L2", MetricType)
-	assert.Equal(t, 1024, IndexNlist)
+	assert.Equal(t, "HNSW", IndexType)
+	assert.Equal(t, "COSINE", MetricType)
+	assert.Equal(t, 16, IndexM)
+	assert.Equal(t, 200, IndexEfConstruction)
 }
 
 func TestLogEntry_MetadataAsJSON(t *testing.T) {
@@ -269,7 +270,7 @@ func TestLogEntry_MetadataAsJSON(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			jsonBytes, err := tt.entry.MetadataAsJSON()
 			require.NoError(t, err)
-			
+
 			jsonString := string(jsonBytes)
 			assert.JSONEq(t, tt.expected, jsonString)
 		})
@@ -280,4 +281,3 @@ func TestStorageInterface_Implementation(t *testing.T) {
 	// Ensure MilvusClient implements StorageInterface
 	var _ StorageInterface = (*MilvusClient)(nil)
 }
-

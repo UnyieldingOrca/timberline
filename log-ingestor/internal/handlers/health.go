@@ -61,7 +61,7 @@ func (h *HealthHandler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(response)
 
 	h.logger.WithFields(logrus.Fields{
-		"status":     overallStatus,
+		"status":      overallStatus,
 		"status_code": statusCode,
 	}).Debug("Health check completed")
 }

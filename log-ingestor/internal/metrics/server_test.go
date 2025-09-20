@@ -68,7 +68,7 @@ func TestServer_MetricsEndpoint(t *testing.T) {
 
 	// Give the server a moment to start
 	time.Sleep(10 * time.Millisecond)
-	
+
 	// Since we're using port 0, we can't easily test the actual endpoint
 	// Instead, let's verify the handler is set up correctly
 	if server.server.Handler == nil {
@@ -111,7 +111,7 @@ func TestServer_Stop(t *testing.T) {
 	// Test stopping server without starting it (should not panic)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	
+
 	err := server.Stop(ctx)
 	// Stop might return an error if server wasn't started, which is expected
 	// We just want to ensure it doesn't panic
@@ -143,11 +143,11 @@ func TestServer_Stop_WithCanceledContext(t *testing.T) {
 
 func TestServer_Configuration(t *testing.T) {
 	tests := []struct {
-		port           int
-		expectedAddr   string
-		expectedRead   time.Duration
-		expectedWrite  time.Duration
-		expectedIdle   time.Duration
+		port          int
+		expectedAddr  string
+		expectedRead  time.Duration
+		expectedWrite time.Duration
+		expectedIdle  time.Duration
 	}{
 		{8080, ":8080", 5 * time.Second, 10 * time.Second, 15 * time.Second},
 		{9090, ":9090", 5 * time.Second, 10 * time.Second, 15 * time.Second},
@@ -220,7 +220,7 @@ func TestServer_HandlerSetup(t *testing.T) {
 
 func TestServer_Logger(t *testing.T) {
 	server := NewServer(9090)
-	
+
 	if server.logger == nil {
 		t.Error("Expected logger to be initialized")
 	}

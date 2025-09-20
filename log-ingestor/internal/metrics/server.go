@@ -35,11 +35,11 @@ func NewServer(port int) *Server {
 
 func (s *Server) Start() error {
 	s.logger.WithField("address", s.server.Addr).Info("Starting metrics server")
-	
+
 	if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err
 	}
-	
+
 	return nil
 }
 

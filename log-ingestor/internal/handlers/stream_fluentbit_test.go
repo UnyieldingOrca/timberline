@@ -123,7 +123,7 @@ func TestFluentBitTransformation(t *testing.T) {
 		Date: 1758402234.567,
 		Log:  "Test log message",
 		Kubernetes: map[string]interface{}{
-			"pod_name":      "test-pod",
+			"pod_name":       "test-pod",
 			"namespace_name": "test-namespace",
 			"container_name": "test-container",
 		},

@@ -59,12 +59,12 @@ type StreamHandler struct {
 }
 
 type StreamMetrics struct {
-	requestsTotal    prometheus.Counter
-	requestDuration  prometheus.Histogram
-	linesProcessed   prometheus.Counter
-	batchesCreated   prometheus.Counter
-	errorsTotal      prometheus.Counter
-	invalidLines     prometheus.Counter
+	requestsTotal   prometheus.Counter
+	requestDuration prometheus.Histogram
+	linesProcessed  prometheus.Counter
+	batchesCreated  prometheus.Counter
+	errorsTotal     prometheus.Counter
+	invalidLines    prometheus.Counter
 }
 
 func NewStreamHandler(storage storage.StorageInterface, maxBatchSize int) *StreamHandler {

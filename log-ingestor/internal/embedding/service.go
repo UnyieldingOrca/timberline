@@ -22,7 +22,7 @@ type EmbeddingRequest struct {
 type EmbeddingResponse struct {
 	Data  []EmbeddingData `json:"data"`
 	Model string          `json:"model"`
-	Usage Usage          `json:"usage,omitempty"`
+	Usage Usage           `json:"usage,omitempty"`
 }
 
 // LlamaCppEmbeddingResponse represents a response from llama.cpp embedding service
@@ -48,11 +48,11 @@ type Usage struct {
 
 // Service handles communication with the external embedding service
 type Service struct {
-	endpoint   string
-	model      string
-	dimension  int
-	client     *http.Client
-	logger     *logrus.Logger
+	endpoint  string
+	model     string
+	dimension int
+	client    *http.Client
+	logger    *logrus.Logger
 }
 
 // NewService creates a new embedding service client
@@ -170,14 +170,14 @@ func (s *Service) GetEmbedding(ctx context.Context, text string) ([]float32, err
 // HealthCheck verifies that the embedding service is available
 func (s *Service) HealthCheck(ctx context.Context) error {
 	s.logger.Debug("Performing embedding service health check")
-	
+
 	// Send a minimal test request
 	testTexts := []string{"health check"}
 	_, err := s.GetEmbeddings(ctx, testTexts)
 	if err != nil {
 		return fmt.Errorf("embedding service health check failed: %w", err)
 	}
-	
+
 	return nil
 }
 

@@ -15,27 +15,29 @@ import (
 
 const (
 	// Collection schema field names
-	FieldID         = "id"
-	FieldTimestamp  = "timestamp"
-	FieldMessage    = "message"
-	FieldSource     = "source"
-	FieldMetadata   = "metadata"
-	FieldEmbedding  = "embedding"
-	
+	FieldID        = "id"
+	FieldTimestamp = "timestamp"
+	FieldMessage   = "message"
+	FieldSource    = "source"
+	FieldMetadata  = "metadata"
+	FieldEmbedding = "embedding"
+
 	// Collection settings
-	DefaultShards  = int32(1)
-	IndexType      = "IVF_FLAT"
-	MetricType     = "L2"
-	IndexNlist     = 1024
+	DefaultShards       = int32(1)
+	IndexType           = "HNSW"
+	MetricType          = "COSINE"
+	IndexM              = 16
+	IndexEfConstruction = 200
 )
 
 type MilvusClient struct {
-	client         client.Client
-	collection     string
-	embeddingDim   int
-	embeddingService embedding.Interface
-	logger         *logrus.Logger
-	connected      bool
+	client              client.Client
+	collection          string
+	embeddingDim        int
+	embeddingService    embedding.Interface
+	logger              *logrus.Logger
+	connected           bool
+	similarityThreshold float32
 }
 
 type StorageInterface interface {
@@ -46,31 +48,32 @@ type StorageInterface interface {
 	CreateCollection(ctx context.Context) error
 }
 
-func NewMilvusClient(address string, embeddingService embedding.Interface, embeddingDim int) *MilvusClient {
+func NewMilvusClient(address string, embeddingService embedding.Interface, embeddingDim int, similarityThreshold float32) *MilvusClient {
 	return &MilvusClient{
-		collection:       "timberline_logs",
-		embeddingDim:     embeddingDim,
-		embeddingService: embeddingService,
-		logger:           logrus.New(),
-		connected:        false,
+		collection:          "timberline_logs",
+		embeddingDim:        embeddingDim,
+		embeddingService:    embeddingService,
+		logger:              logrus.New(),
+		connected:           false,
+		similarityThreshold: similarityThreshold,
 	}
 }
 
 func (m *MilvusClient) Connect(ctx context.Context) error {
 	m.logger.Info("Connecting to Milvus")
-	
+
 	cfg := &client.Config{
 		Address: "milvus:19530", // Default Milvus address
 	}
-	
+
 	c, err := client.NewClient(ctx, *cfg)
 	if err != nil {
 		return fmt.Errorf("failed to create Milvus client: %w", err)
 	}
-	
+
 	m.client = c
 	m.connected = true
-	
+
 	m.logger.Info("Successfully connected to Milvus")
 	return nil
 }
@@ -87,22 +90,22 @@ func (m *MilvusClient) Close() error {
 
 func (m *MilvusClient) CreateCollection(ctx context.Context) error {
 	m.logger.WithField("collection", m.collection).Info("Creating Milvus collection")
-	
+
 	if !m.connected {
 		return fmt.Errorf("not connected to Milvus")
 	}
-	
+
 	// Check if collection already exists
 	hasCollection, err := m.client.HasCollection(ctx, m.collection)
 	if err != nil {
 		return fmt.Errorf("failed to check collection existence: %w", err)
 	}
-	
+
 	if hasCollection {
 		m.logger.WithField("collection", m.collection).Info("Collection already exists")
 		return nil
 	}
-	
+
 	// Define collection schema
 	schema := &entity.Schema{
 		CollectionName: m.collection,
@@ -145,93 +148,169 @@ func (m *MilvusClient) CreateCollection(ctx context.Context) error {
 			},
 		},
 	}
-	
+
 	// Create collection
 	err = m.client.CreateCollection(ctx, schema, DefaultShards)
 	if err != nil {
 		return fmt.Errorf("failed to create collection: %w", err)
 	}
-	
+
 	m.logger.WithField("collection", m.collection).Info("Collection created successfully")
-	
+
 	// Create index on embedding field for vector search
 	if err := m.createEmbeddingIndex(ctx); err != nil {
 		m.logger.WithError(err).Warn("Failed to create embedding index, search performance may be affected")
 	}
-	
+
 	return nil
 }
 
 func (m *MilvusClient) createEmbeddingIndex(ctx context.Context) error {
-	m.logger.Info("Creating embedding vector index")
-	
-	idx, err := entity.NewIndexIvfFlat(MetricType, IndexNlist)
+	m.logger.Info("Creating HNSW embedding vector index with cosine similarity")
+
+	idx, err := entity.NewIndexHNSW(entity.COSINE, IndexM, IndexEfConstruction)
 	if err != nil {
-		return fmt.Errorf("failed to create index: %w", err)
+		return fmt.Errorf("failed to create HNSW index: %w", err)
 	}
-	
+
 	err = m.client.CreateIndex(ctx, m.collection, FieldEmbedding, idx, false)
 	if err != nil {
 		return fmt.Errorf("failed to create embedding index: %w", err)
 	}
-	
-	m.logger.Info("Embedding index created successfully")
+
+	m.logger.Info("HNSW embedding index with cosine similarity created successfully")
 	return nil
+}
+
+// SearchSimilarLogs searches for logs similar to the given embedding
+func (m *MilvusClient) SearchSimilarLogs(ctx context.Context, embedding []float32, topK int) ([]float32, error) {
+	if !m.connected {
+		return nil, fmt.Errorf("not connected to Milvus")
+	}
+
+	// Create search vector
+	searchVectors := []entity.Vector{
+		entity.FloatVector(embedding),
+	}
+
+	// Set search parameters for HNSW
+	sp, _ := entity.NewIndexHNSWSearchParam(64) // ef parameter for search
+
+	// Perform search
+	results, err := m.client.Search(
+		ctx,
+		m.collection,
+		[]string{},        // partition names (empty for all partitions)
+		"",                // expression filter (empty for all)
+		[]string{FieldID}, // output fields
+		searchVectors,
+		FieldEmbedding, // vector field name
+		entity.COSINE,  // metric type
+		topK,           // topK results
+		sp,             // search parameters
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to search similar logs: %w", err)
+	}
+
+	if len(results) == 0 {
+		return []float32{}, nil
+	}
+
+	// Extract distances/scores
+	scores := make([]float32, len(results[0].Scores))
+	copy(scores, results[0].Scores)
+
+	return scores, nil
 }
 
 func (m *MilvusClient) StoreBatch(ctx context.Context, batch *models.LogBatch) error {
 	if batch == nil {
 		return fmt.Errorf("batch cannot be nil")
 	}
-	
+
 	if err := batch.Validate(); err != nil {
 		return fmt.Errorf("batch validation failed: %w", err)
 	}
-	
+
 	if !m.connected {
 		return fmt.Errorf("not connected to Milvus")
 	}
-	
+
 	m.logger.WithField("batch_size", batch.Size()).Debug("Storing log batch to Milvus")
-	
+
 	// Extract texts for embedding
 	texts := make([]string, 0, batch.Size())
 	for _, log := range batch.Logs {
 		texts = append(texts, log.Message)
 	}
-	
+
 	// Get embeddings for all log messages
 	embeddings, err := m.embeddingService.GetEmbeddings(ctx, texts)
 	if err != nil {
 		return fmt.Errorf("failed to get embeddings: %w", err)
 	}
-	
+
 	if len(embeddings) != batch.Size() {
 		return fmt.Errorf("embedding count mismatch: expected %d, got %d", batch.Size(), len(embeddings))
 	}
-	
-	// Prepare data for insertion
+
+	// Filter out duplicate logs based on similarity
 	timestampColumn := make([]int64, 0, batch.Size())
 	messageColumn := make([]string, 0, batch.Size())
 	sourceColumn := make([]string, 0, batch.Size())
 	metadataColumn := make([][]byte, 0, batch.Size())
 	embeddingColumn := make([][]float32, 0, batch.Size())
-	
+
+	skippedCount := 0
+
+	// For cosine similarity, higher scores mean more similar
+	// We want to skip logs that are above the similarity threshold
+	cosineThreshold := m.similarityThreshold
+
 	for i, log := range batch.Logs {
+		// Check for similar logs if similarity threshold is enabled (> 0)
+		if m.similarityThreshold > 0 {
+			distances, err := m.SearchSimilarLogs(ctx, embeddings[i], 1)
+			if err != nil {
+				m.logger.WithError(err).Warn("Failed to search for similar logs, proceeding with insertion")
+			} else if len(distances) > 0 && distances[0] > cosineThreshold {
+				// Skip this log as it's too similar to an existing one
+				// Note: cosine similarity scores are higher for more similar vectors
+				skippedCount++
+				m.logger.WithFields(logrus.Fields{
+					"message":    log.Message,
+					"similarity": distances[0],
+					"threshold":  cosineThreshold,
+				}).Debug("Skipping duplicate log based on cosine similarity")
+				continue
+			}
+		}
+
 		timestampColumn = append(timestampColumn, log.Timestamp)
 		messageColumn = append(messageColumn, log.Message)
 		sourceColumn = append(sourceColumn, log.Source)
-		
+
 		// Serialize metadata as JSON
 		metadataBytes, err := log.MetadataAsJSON()
 		if err != nil {
 			return fmt.Errorf("failed to serialize metadata for log %d: %w", i, err)
 		}
 		metadataColumn = append(metadataColumn, metadataBytes)
-		
+
 		embeddingColumn = append(embeddingColumn, embeddings[i])
 	}
-	
+
+	// If all logs were filtered out, return early
+	if len(timestampColumn) == 0 {
+		m.logger.WithFields(logrus.Fields{
+			"original_count": batch.Size(),
+			"skipped_count":  skippedCount,
+		}).Info("All logs skipped due to similarity, no insertion needed")
+		return nil
+	}
+
 	// Create column data
 	columns := []entity.Column{
 		entity.NewColumnInt64(FieldTimestamp, timestampColumn),
@@ -240,46 +319,48 @@ func (m *MilvusClient) StoreBatch(ctx context.Context, batch *models.LogBatch) e
 		entity.NewColumnJSONBytes(FieldMetadata, metadataColumn),
 		entity.NewColumnFloatVector(FieldEmbedding, m.embeddingDim, embeddingColumn),
 	}
-	
+
 	// Insert data
 	result, err := m.client.Insert(ctx, m.collection, "", columns...)
 	if err != nil {
 		return fmt.Errorf("failed to insert batch: %w", err)
 	}
-	
+
 	m.logger.WithFields(logrus.Fields{
-		"processed_count": batch.Size(),
-		"insert_result":   result != nil,
+		"original_count": batch.Size(),
+		"inserted_count": len(timestampColumn),
+		"skipped_count":  skippedCount,
+		"insert_result":  result != nil,
 	}).Info("Batch stored successfully")
-	
+
 	return nil
 }
 
 func (m *MilvusClient) HealthCheck(ctx context.Context) error {
 	m.logger.Debug("Performing Milvus health check")
-	
+
 	if !m.connected {
 		return fmt.Errorf("not connected to Milvus")
 	}
-	
+
 	// Check if client is connected and responsive
 	version, err := m.client.GetVersion(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get Milvus version: %w", err)
 	}
-	
+
 	m.logger.WithField("version", version).Debug("Milvus health check passed")
-	
+
 	// Check if collection exists and is accessible
 	hasCollection, err := m.client.HasCollection(ctx, m.collection)
 	if err != nil {
 		return fmt.Errorf("failed to check collection: %w", err)
 	}
-	
+
 	if !hasCollection {
 		m.logger.WithField("collection", m.collection).Warn("Collection does not exist")
 	}
-	
+
 	return nil
 }
 
@@ -288,14 +369,14 @@ func (m *MilvusClient) LoadCollection(ctx context.Context) error {
 	if !m.connected {
 		return fmt.Errorf("not connected to Milvus")
 	}
-	
+
 	m.logger.WithField("collection", m.collection).Info("Loading collection into memory")
-	
+
 	err := m.client.LoadCollection(ctx, m.collection, false)
 	if err != nil {
 		return fmt.Errorf("failed to load collection: %w", err)
 	}
-	
+
 	// Wait for collection to be loaded
 	for {
 		select {
@@ -306,12 +387,12 @@ func (m *MilvusClient) LoadCollection(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("failed to get loading progress: %w", err)
 			}
-			
+
 			if progress == 100 {
 				m.logger.Info("Collection loaded successfully")
 				return nil
 			}
-			
+
 			m.logger.WithField("progress", progress).Debug("Loading collection...")
 		}
 	}

@@ -34,7 +34,7 @@ func main() {
 
 	// Initialize embedding service
 	embeddingService := embedding.NewService(cfg.EmbeddingEndpoint, cfg.EmbeddingModel, cfg.EmbeddingDimension)
-	
+
 	// Test embedding service connection
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	if err := embeddingService.HealthCheck(ctx); err != nil {
@@ -43,12 +43,12 @@ func main() {
 	cancel()
 
 	// Initialize storage
-	storageClient := storage.NewMilvusClient(cfg.MilvusAddress, embeddingService, cfg.EmbeddingDimension)
-	
+	storageClient := storage.NewMilvusClient(cfg.MilvusAddress, embeddingService, cfg.EmbeddingDimension, cfg.SimilarityThreshold)
+
 	// Connect to storage with retry
 	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	if err := storageClient.Connect(ctx); err != nil {
 		logger.WithError(err).Fatal("Failed to connect to storage")
 	}
@@ -57,7 +57,7 @@ func main() {
 			logger.WithError(err).Error("Failed to close storage client")
 		}
 	}()
-	
+
 	// Create collection if it doesn't exist
 	if err := storageClient.CreateCollection(ctx); err != nil {
 		logger.WithError(err).Fatal("Failed to create collection")
@@ -85,13 +85,13 @@ func main() {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-			
+
 			// Handle preflight requests
 			if r.Method == "OPTIONS" {
 				w.WriteHeader(http.StatusOK)
 				return
 			}
-			
+
 			next.ServeHTTP(w, r)
 		})
 	})
@@ -147,12 +147,12 @@ func main() {
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		
+
 		// Wrap ResponseWriter to capture status code
 		wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		
+
 		next.ServeHTTP(wrapped, r)
-		
+
 		logrus.WithFields(logrus.Fields{
 			"method":      r.Method,
 			"path":        r.URL.Path,

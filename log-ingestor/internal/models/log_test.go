@@ -8,7 +8,7 @@ import (
 
 func TestLogEntryValidate(t *testing.T) {
 	now := time.Now().UnixMilli()
-	
+
 	tests := []struct {
 		name        string
 		logEntry    LogEntry
@@ -31,8 +31,8 @@ func TestLogEntryValidate(t *testing.T) {
 				Message:   "Test message",
 				Source:    "test-service",
 				Metadata: map[string]interface{}{
-					"level": "ERROR",
-					"pod_name": "test-pod",
+					"level":     "ERROR",
+					"pod_name":  "test-pod",
 					"namespace": "default",
 				},
 			},
@@ -493,11 +493,11 @@ func TestHealthResponse(t *testing.T) {
 	if len(unmarshaled.Checks) != len(response.Checks) {
 		t.Errorf("Expected %d checks, got %d", len(response.Checks), len(unmarshaled.Checks))
 	}
-	
+
 	// Verify timestamp is properly serialized/deserialized
 	timeDiff := unmarshaled.Timestamp.Sub(response.Timestamp)
 	if timeDiff > time.Millisecond || timeDiff < -time.Millisecond {
-		t.Errorf("Timestamp serialization issue: expected %v, got %v (diff: %v)", 
+		t.Errorf("Timestamp serialization issue: expected %v, got %v (diff: %v)",
 			response.Timestamp, unmarshaled.Timestamp, timeDiff)
 	}
 }
@@ -564,19 +564,18 @@ func TestValidationError(t *testing.T) {
 	}
 }
 
-
 // Helper function to check if string contains substring
 func containsSubstring(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || 
-		(len(substr) > 0 && len(s) > 0 && 
-			(s[:len(substr)] == substr || 
-			 s[len(s)-len(substr):] == substr ||
-			 func() bool {
-				for i := 1; i < len(s)-len(substr)+1; i++ {
-					if s[i:i+len(substr)] == substr {
-						return true
+	return len(s) >= len(substr) && (s == substr ||
+		(len(substr) > 0 && len(s) > 0 &&
+			(s[:len(substr)] == substr ||
+				s[len(s)-len(substr):] == substr ||
+				func() bool {
+					for i := 1; i < len(s)-len(substr)+1; i++ {
+						if s[i:i+len(substr)] == substr {
+							return true
+						}
 					}
-				}
-				return false
-			}())))
+					return false
+				}())))
 }
