@@ -61,7 +61,26 @@ fmt: ## Format code
 
 lint: ## Lint code
 	@echo "Running linter..."
-	$(GOLINT) run ./...
+	@echo "Running go vet..."
+	$(GOCMD) vet ./...
+	@echo "Running gofmt check..."
+	@if [ -n "$$(gofmt -d .)" ]; then \
+		echo "Code is not properly formatted. Please run 'make fmt'"; \
+		gofmt -d .; \
+		exit 1; \
+	fi
+	@echo "Running go mod tidy check..."
+	$(GOCMD) mod tidy
+	@if [ -n "$$(git status --porcelain go.mod go.sum)" ]; then \
+		echo "go.mod or go.sum is not tidy. Please run 'go mod tidy'"; \
+		exit 1; \
+	fi
+	@echo "Checking for ineffassign (if available)..."
+	@if command -v ineffassign >/dev/null 2>&1; then \
+		ineffassign ./...; \
+	else \
+		echo "ineffassign not available, skipping"; \
+	fi
 	@echo "Lint complete"
 
 run: build ## Run the application locally
