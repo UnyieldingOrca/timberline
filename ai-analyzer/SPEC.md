@@ -21,7 +21,7 @@ The AI Log Analyzer is a Python-based service that performs LLM-powered analysis
 
 ### 1. Daily Log Analysis Pipeline
 - Query last 24 hours of logs from Milvus vector database
-- Group similar logs using vector clustering
+- Group similar logs using Kubernetes label-based clustering
 - Send log samples to LLM for analysis and severity ranking
 - Generate structured reports with LLM-powered insights
 - Output reports to file system or single webhook endpoint
@@ -42,25 +42,15 @@ The AI Log Analyzer is a Python-based service that performs LLM-powered analysis
 
 ## Technical Components
 
-### 1. Milvus Query Engine (`analyzer/storage/milvus_client.py`)
-
-**Purpose**: Interface with Milvus for log retrieval and clustering
+### 1. Log Retrieval and Clustering
+**Purpose**: Interface with Milvus for log retrieval and intelligent grouping
 
 **Key Features**:
 - Time-range queries for daily analysis windows
-- Log clustering using vector similarity
+- Log clustering using Kubernetes labels (app, version, tier, etc.)
 - Batch processing for large log volumes
 
-**Core Methods**:
-```python
-class MilvusQueryEngine:
-    def query_time_range(self, start_time: datetime, end_time: datetime) -> List[LogRecord]
-    def cluster_similar_logs(self, logs: List[LogRecord]) -> List[LogCluster]
-    def get_log_statistics(self, time_range: tuple) -> LogStatistics
-```
-
-### 2. LLM Integration (`analyzer/llm/client.py`)
-
+### 2. LLM Integration
 **Purpose**: Core LLM integration for log analysis and severity ranking
 
 **Capabilities**:
@@ -72,147 +62,66 @@ class MilvusQueryEngine:
 - **Local**: llama.cpp, Ollama
 - **Cloud**: OpenAI GPT-4, Anthropic Claude
 
-**Integration Pattern**:
-```python
-class LLMClient:
-    def analyze_log_batch(self, logs: List[LogRecord]) -> List[AnalyzedLog]
-    def rank_severity(self, log_clusters: List[LogCluster]) -> List[SeverityScore]
-    def generate_daily_summary(self, analysis: AnalysisResult) -> str
-```
-
-### 3. Analysis Engine (`analyzer/analysis/engine.py`)
-
+### 3. Analysis Engine
 **Purpose**: Orchestrate the daily analysis pipeline
 
-**Analysis Pipeline**:
-```python
-class AnalysisEngine:
-    def analyze_daily_logs(self, analysis_date: date) -> DailyAnalysisResult
-    def process_log_clusters(self, clusters: List[LogCluster]) -> List[AnalyzedCluster]
-    def generate_health_score(self, analysis: AnalysisResult) -> float
-```
+**Key Functions**:
+- Daily log analysis coordination
+- Log cluster processing with LLM analysis
+- System health score generation
 
-### 4. Report Generator (`analyzer/reporting/generator.py`)
-
+### 4. Report Generator
 **Purpose**: Generate JSON reports and send notifications
 
 **Output**:
 - JSON structured reports
 - Optional webhook notifications
 
-**Core Methods**:
-```python
-class ReportGenerator:
-    def generate_daily_report(self, analysis: DailyAnalysisResult) -> Dict
-    def save_report(self, report: Dict, filepath: str) -> None
-    def send_webhook_notification(self, report: Dict, webhook_url: str) -> None
-```
-
 ## Configuration
 
 ### Environment Variables
 
-```bash
-# Database Connection
-MILVUS_HOST=milvus
-MILVUS_PORT=19530
-MILVUS_COLLECTION=timberline_logs
+**Database Connection**:
+- Milvus host, port, and collection configuration
 
-# Analysis Settings
-ANALYSIS_WINDOW_HOURS=24
-MAX_LOGS_PER_ANALYSIS=10000
-CLUSTER_BATCH_SIZE=50
+**Analysis Settings**:
+- Analysis window duration (default: 24 hours)
+- Maximum logs per analysis run
+- Batch processing sizes
 
-# LLM Configuration (Required)
-LLM_PROVIDER=openai|anthropic|local
-LLM_ENDPOINT=http://localhost:8000/v1
-LLM_MODEL=gpt-4o-mini|claude-3-haiku|llama-3.1-8b
-LLM_API_KEY=secret_key
+**LLM Configuration** (Required):
+- Provider selection (OpenAI, Anthropic, or local)
+- API endpoints and authentication
+- Model selection
 
-# Reporting
-REPORT_OUTPUT_DIR=/app/reports
-WEBHOOK_URL=https://hooks.slack.com/...
-```
+**Reporting**:
+- Output directory for reports
+- Optional webhook notifications
 
 ## CLI Interface
 
 The AI Analyzer runs as a CronJob and provides a simple CLI interface:
 
-```bash
-# Main analysis command (used in CronJob)
-python -m analyzer.cli analyze-daily
-
-# Optional manual execution
-python -m analyzer.cli analyze-date --date=2024-01-15
-python -m analyzer.cli health-check
-```
-
-## Data Models
-
-### Core Data Structures
-
-```python
-@dataclass
-class LogRecord:
-    id: int
-    timestamp: int  # Unix timestamp in milliseconds
-    message: str
-    source: str
-    metadata: Dict[str, Any]
-    embedding: List[float]
-    level: str
-
-@dataclass
-class LogCluster:
-    representative_log: LogRecord
-    similar_logs: List[LogRecord]
-    count: int
-    severity_score: Optional[int] = None  # Set by LLM
-
-@dataclass
-class AnalyzedLog:
-    log: LogRecord
-    severity: int  # 1-10 scale from LLM
-    reasoning: str
-    category: str  # 'error', 'warning', 'info', 'performance'
-
-@dataclass
-class DailyAnalysisResult:
-    analysis_date: date
-    total_logs_processed: int
-    error_count: int
-    warning_count: int
-    analyzed_clusters: List[LogCluster]
-    top_issues: List[AnalyzedLog]  # Top 10 by severity
-    health_score: float  # 0-1 scale
-    llm_summary: str
-    execution_time: float
-```
+- Daily analysis execution (used in CronJob)
+- Manual date-specific analysis
+- Health check functionality
 
 ## Analysis Pipeline
 
 ### 1. Log Clustering
-```python
-def cluster_similar_logs(logs: List[LogRecord]) -> List[LogCluster]:
-    # Use vector similarity clustering on embeddings
-    # Group similar log messages together
-    # Select representative log for each cluster
-```
+- Groups logs by identical Kubernetes label combinations (app, version, tier, etc.)
+- Selects representative log for each cluster (prioritizes ERROR > WARNING > INFO)
+- Enables service-specific issue identification
 
 ### 2. LLM-Based Analysis
-```python
-def analyze_with_llm(clusters: List[LogCluster]) -> List[AnalyzedLog]:
-    # Send representative logs to LLM for analysis
-    # Get severity scores (1-10) and reasoning
-    # Categorize issues by type
-```
+- Sends representative logs to LLM for severity scoring and analysis
+- Generates severity scores (1-10 scale) with reasoning
+- Categorizes issues by type (error, warning, info, performance)
 
 ### 3. Health Score Calculation
-```python
-def calculate_health_score(analysis: DailyAnalysisResult) -> float:
-    # Simple formula based on error/warning counts and severity scores
-    # Returns 0-1 score (1 = healthy, 0 = critical issues)
-```
+- Calculates system health based on error/warning counts and severity scores
+- Returns 0-1 score (1 = healthy, 0 = critical issues)
+- Factors in LLM analysis results for more accurate assessment
 
 ## Deployment
 
@@ -222,20 +131,20 @@ The AI Analyzer is deployed as a Kubernetes CronJob that runs daily at 6 AM to a
 ## Monitoring & Observability
 
 ### Basic Metrics
-- `analyzer_logs_processed_total`: Total logs analyzed
-- `analyzer_analysis_duration_seconds`: Analysis execution time
-- `analyzer_health_score`: Latest calculated health score
-- `analyzer_llm_requests_total`: LLM API requests
+- Total logs processed per analysis run
+- Analysis execution time tracking
+- System health score monitoring
+- LLM API request counting
 
 ### Logging Strategy
 - Structured logging for analysis execution
 - Error tracking and debugging information
-- LLM request/response logging (without sensitive data)
+- LLM request/response logging (sanitized)
 
 ### Health Checks
-- Milvus connectivity test
-- LLM service availability test
-- Basic resource utilization check
+- Database connectivity verification
+- LLM service availability testing
+- Resource utilization monitoring
 
 ## Security Considerations (MVP Scope)
 

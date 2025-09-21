@@ -33,17 +33,31 @@ def milvus_engine(settings):
 
 @pytest.fixture
 def sample_logs():
-    """Create sample logs for testing"""
+    """Create sample logs for testing with different label combinations"""
     logs = []
     base_time = datetime(2022, 1, 1, 10, 0, 0)
 
-    for i in range(10):
+    # Create logs with different label combinations for testing clustering
+    label_combinations = [
+        {"app": "web-server", "version": "v1.0"},
+        {"app": "web-server", "version": "v1.0"},  # Duplicate for clustering
+        {"app": "database", "version": "v2.1"},
+        {"app": "database", "version": "v2.1"},   # Duplicate for clustering
+        {"app": "cache", "tier": "production"},
+        {"app": "web-server", "version": "v1.0"},  # Another duplicate
+        {"app": "monitoring", "env": "prod"},
+        {"app": "cache", "tier": "production"},     # Another duplicate
+        {},  # No labels
+        {}   # No labels (duplicate)
+    ]
+
+    for i, labels in enumerate(label_combinations):
         logs.append(LogRecord(
             id=i,
             timestamp=int((base_time + timedelta(minutes=i)).timestamp() * 1000),
             message=f"Test log message {i}",
             source=f"pod-{i % 3}",
-            metadata={"namespace": "test"},
+            metadata={"namespace": "test", "labels": labels},
             embedding=[0.1, 0.2, 0.3, 0.4, 0.5] + [0.0] * 123,  # 128-dim
             level="ERROR" if i % 3 == 0 else "INFO"
         ))
@@ -230,49 +244,63 @@ def test_cluster_similar_logs_single_log(milvus_engine):
 
 
 def test_cluster_similar_logs_few_logs(milvus_engine, sample_logs):
-    """Test clustering with few logs (less than n_clusters)"""
-    # Use only 3 logs - the algorithm should handle this case
+    """Test clustering with few logs using label-based clustering"""
+    # Use only 3 logs - first 3 have different label combinations
     logs = sample_logs[:3]
-
-    # Make embeddings more different to increase chance of separate clusters
-    logs[0].embedding = [1.0] + [0.0] * 127
-    logs[1].embedding = [0.0] + [1.0] + [0.0] * 126
-    logs[2].embedding = [0.0] * 127 + [1.0]
 
     clusters = milvus_engine.cluster_similar_logs(logs)
 
-    # With few logs, each should become its own cluster (or very close to it)
-    assert len(clusters) == 3  # Each log becomes its own cluster
+    # With label-based clustering: logs 0,1 have same labels, log 2 has different
+    assert len(clusters) == 2  # Two distinct label groups
     assert sum(cluster.count for cluster in clusters) == 3  # All logs accounted for
+
+    # Check that logs with same labels are clustered together
+    cluster_counts = [cluster.count for cluster in clusters]
+    cluster_counts.sort()
+    assert cluster_counts == [1, 2]  # One cluster with 2 logs, one with 1
 
 
 def test_cluster_similar_logs_many_logs(milvus_engine, sample_logs):
-    """Test clustering with many logs"""
-    # Create more logs
-    logs = sample_logs * 3  # 30 logs total
+    """Test clustering with many logs using label-based clustering"""
+    # Create more logs by repeating the sample (30 logs total)
+    logs = sample_logs * 3
 
     clusters = milvus_engine.cluster_similar_logs(logs)
 
     assert len(clusters) > 0
-    assert len(clusters) <= 20  # Max clusters limit
+    # With label-based clustering, we should have 5 distinct label groups:
+    # 1. {"app": "web-server", "version": "v1.0"}
+    # 2. {"app": "database", "version": "v2.1"}
+    # 3. {"app": "cache", "tier": "production"}
+    # 4. {"app": "monitoring", "env": "prod"}
+    # 5. {} (no labels)
+    assert len(clusters) == 5
     assert sum(cluster.count for cluster in clusters) == len(logs)
 
 
 def test_cluster_sorting(milvus_engine):
     """Test that clusters are sorted by severity and count"""
-    # Create enough logs to trigger K-means clustering (>= 5)
+    # Create logs with different labels and levels
     logs = []
     for i in range(10):
         level = ["INFO", "ERROR", "WARNING"][i % 3]
+        # Create different label groups
+        if i < 3:
+            labels = {"app": "web", "tier": "prod"}
+        elif i < 6:
+            labels = {"app": "db", "env": "staging"}
+        else:
+            labels = {"service": "cache"}
+
         logs.append(LogRecord(
             id=i, timestamp=1640995200000 + i, message=f"message {i}",
-            source="pod-1", metadata={}, embedding=[0.1 + (i * 0.01)] * 128, level=level
+            source="pod-1", metadata={"labels": labels}, embedding=[0.1 + (i * 0.01)] * 128, level=level
         ))
 
     clusters = milvus_engine.cluster_similar_logs(logs)
 
-    # Should have multiple clusters and be sorted
-    assert len(clusters) > 0
+    # Should have 3 clusters (3 different label groups)
+    assert len(clusters) == 3
 
     # Check that all logs are accounted for
     total_logs_in_clusters = sum(cluster.count for cluster in clusters)
@@ -282,6 +310,11 @@ def test_cluster_sorting(milvus_engine):
     for cluster in clusters:
         assert cluster.count > 0
         assert len(cluster.similar_logs) == cluster.count
+
+    # Check that clusters are sorted by severity (ERROR logs first)
+    # The first cluster should contain ERROR logs
+    first_cluster_has_errors = any(log.level == "ERROR" for log in clusters[0].similar_logs)
+    assert first_cluster_has_errors or clusters[0].count >= max(c.count for c in clusters[1:])
 
 
 @patch('analyzer.storage.milvus_client.connections')
@@ -317,19 +350,21 @@ def test_health_check_invalid_config(mock_utility, mock_connections, settings):
         assert result is False
 
 
-def test_choose_representative_log_random_selection(milvus_engine):
-    """Test representative log selection returns one of the input logs"""
+def test_choose_representative_log_prioritizes_errors(milvus_engine):
+    """Test representative log selection prioritizes ERROR/CRITICAL logs"""
     logs = [
         LogRecord(id=1, timestamp=1640995200000, message="info", source="pod-1",
                  metadata={}, embedding=[0.1] * 128, level="INFO"),
-        LogRecord(id=2, timestamp=1640995200000, message="debug", source="pod-1",
+        LogRecord(id=2, timestamp=1640995200001, message="debug", source="pod-1",
                  metadata={}, embedding=[0.2] * 128, level="DEBUG"),
-        LogRecord(id=3, timestamp=1640995200000, message="error", source="pod-1",
+        LogRecord(id=3, timestamp=1640995200002, message="error", source="pod-1",
                  metadata={}, embedding=[0.3] * 128, level="ERROR"),
     ]
 
     representative = milvus_engine._choose_representative_log(logs)
-    assert representative in logs  # Should return one of the input logs
+    # Should return the ERROR log (highest priority)
+    assert representative.level == "ERROR"
+    assert representative.id == 3
 
 
 def test_choose_representative_log_single_item(milvus_engine):
@@ -403,3 +438,171 @@ def test_query_logs_validation(mock_collection, mock_utility, mock_connections, 
         assert isinstance(log.embedding, list)
         assert len(log.embedding) == 128  # Expected embedding dimension
         assert log.level in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+
+def test_extract_labels_basic(milvus_engine):
+    """Test basic label extraction from log metadata"""
+    log = LogRecord(
+        id=1, timestamp=1640995200000, message="test", source="pod-1",
+        metadata={"labels": {"app": "web", "version": "v1.0"}},
+        embedding=[0.1] * 128, level="INFO"
+    )
+
+    labels = milvus_engine._extract_labels(log)
+    assert labels == {"app": "web", "version": "v1.0"}
+
+
+def test_extract_labels_kubernetes_nested(milvus_engine):
+    """Test label extraction from nested kubernetes metadata"""
+    log = LogRecord(
+        id=1, timestamp=1640995200000, message="test", source="pod-1",
+        metadata={"kubernetes": {"labels": {"service": "api", "tier": "backend"}}},
+        embedding=[0.1] * 128, level="INFO"
+    )
+
+    labels = milvus_engine._extract_labels(log)
+    assert labels == {"service": "api", "tier": "backend"}
+
+
+def test_extract_labels_kubernetes_labels_key(milvus_engine):
+    """Test label extraction from kubernetes_labels key"""
+    log = LogRecord(
+        id=1, timestamp=1640995200000, message="test", source="pod-1",
+        metadata={"kubernetes_labels": {"env": "production", "app": "cache"}},
+        embedding=[0.1] * 128, level="INFO"
+    )
+
+    labels = milvus_engine._extract_labels(log)
+    assert labels == {"env": "production", "app": "cache"}
+
+
+def test_extract_labels_empty_metadata(milvus_engine):
+    """Test label extraction with empty or invalid metadata"""
+    log = LogRecord(
+        id=1, timestamp=1640995200000, message="test", source="pod-1",
+        metadata={}, embedding=[0.1] * 128, level="INFO"
+    )
+
+    labels = milvus_engine._extract_labels(log)
+    assert labels == {}
+
+
+def test_extract_labels_non_dict_metadata(milvus_engine):
+    """Test label extraction with non-dict metadata"""
+    log = LogRecord(
+        id=1, timestamp=1640995200000, message="test", source="pod-1",
+        metadata="not a dict", embedding=[0.1] * 128, level="INFO"
+    )
+
+    labels = milvus_engine._extract_labels(log)
+    assert labels == {}
+
+
+def test_create_label_key_basic(milvus_engine):
+    """Test label key creation from basic labels"""
+    labels = {"app": "web", "version": "v1.0"}
+    key = milvus_engine._create_label_key(labels)
+    assert key == "app=web|version=v1.0"
+
+
+def test_create_label_key_sorted(milvus_engine):
+    """Test that label keys are sorted for consistency"""
+    # Test with labels in different order
+    labels1 = {"version": "v1.0", "app": "web"}
+    labels2 = {"app": "web", "version": "v1.0"}
+
+    key1 = milvus_engine._create_label_key(labels1)
+    key2 = milvus_engine._create_label_key(labels2)
+
+    assert key1 == key2
+    assert key1 == "app=web|version=v1.0"
+
+
+def test_create_label_key_empty(milvus_engine):
+    """Test label key creation with empty labels"""
+    labels = {}
+    key = milvus_engine._create_label_key(labels)
+    assert key == "no-labels"
+
+
+def test_cluster_by_labels_integration(milvus_engine):
+    """Test complete label-based clustering integration"""
+    logs = [
+        # Group 1: web-server v1.0 (3 logs)
+        LogRecord(id=1, timestamp=1640995200000, message="web log 1", source="pod-1",
+                 metadata={"labels": {"app": "web-server", "version": "v1.0"}},
+                 embedding=[0.1] * 128, level="INFO"),
+        LogRecord(id=2, timestamp=1640995200001, message="web log 2", source="pod-2",
+                 metadata={"labels": {"app": "web-server", "version": "v1.0"}},
+                 embedding=[0.2] * 128, level="ERROR"),
+        LogRecord(id=3, timestamp=1640995200002, message="web log 3", source="pod-3",
+                 metadata={"labels": {"app": "web-server", "version": "v1.0"}},
+                 embedding=[0.3] * 128, level="WARNING"),
+
+        # Group 2: database v2.1 (2 logs)
+        LogRecord(id=4, timestamp=1640995200003, message="db log 1", source="pod-4",
+                 metadata={"labels": {"app": "database", "version": "v2.1"}},
+                 embedding=[0.4] * 128, level="INFO"),
+        LogRecord(id=5, timestamp=1640995200004, message="db log 2", source="pod-5",
+                 metadata={"labels": {"app": "database", "version": "v2.1"}},
+                 embedding=[0.5] * 128, level="INFO"),
+
+        # Group 3: no labels (1 log)
+        LogRecord(id=6, timestamp=1640995200005, message="unlabeled log", source="pod-6",
+                 metadata={}, embedding=[0.6] * 128, level="ERROR")
+    ]
+
+    clusters = milvus_engine.cluster_similar_logs(logs)
+
+    # Should have 3 clusters
+    assert len(clusters) == 3
+
+    # Check cluster sizes
+    cluster_counts = sorted([cluster.count for cluster in clusters], reverse=True)
+    assert cluster_counts == [3, 2, 1]
+
+    # Check that representative logs are prioritized correctly (ERROR > WARNING > INFO)
+    # The web-server cluster should have the ERROR log as representative
+    web_cluster = next(c for c in clusters if c.count == 3)
+    assert web_cluster.representative_log.level == "ERROR"
+    assert web_cluster.representative_log.id == 2  # Most recent ERROR
+
+    # The no-labels cluster should have the ERROR log as representative
+    no_labels_cluster = next(c for c in clusters if c.count == 1)
+    assert no_labels_cluster.representative_log.level == "ERROR"
+    assert no_labels_cluster.representative_log.id == 6
+
+
+def test_choose_representative_log_most_recent_error(milvus_engine):
+    """Test that most recent error log is chosen when multiple errors exist"""
+    logs = [
+        LogRecord(id=1, timestamp=1640995200000, message="old error", source="pod-1",
+                 metadata={}, embedding=[0.1] * 128, level="ERROR"),
+        LogRecord(id=2, timestamp=1640995200002, message="new error", source="pod-1",
+                 metadata={}, embedding=[0.2] * 128, level="ERROR"),
+        LogRecord(id=3, timestamp=1640995200001, message="middle error", source="pod-1",
+                 metadata={}, embedding=[0.3] * 128, level="ERROR"),
+    ]
+
+    representative = milvus_engine._choose_representative_log(logs)
+    # Should return the most recent ERROR log
+    assert representative.id == 2  # Newest timestamp
+    assert representative.message == "new error"
+
+
+def test_choose_representative_log_warning_fallback(milvus_engine):
+    """Test that WARNING logs are chosen when no ERROR logs exist"""
+    logs = [
+        LogRecord(id=1, timestamp=1640995200000, message="info", source="pod-1",
+                 metadata={}, embedding=[0.1] * 128, level="INFO"),
+        LogRecord(id=2, timestamp=1640995200002, message="new warning", source="pod-1",
+                 metadata={}, embedding=[0.2] * 128, level="WARNING"),
+        LogRecord(id=3, timestamp=1640995200001, message="old warning", source="pod-1",
+                 metadata={}, embedding=[0.3] * 128, level="WARNING"),
+    ]
+
+    representative = milvus_engine._choose_representative_log(logs)
+    # Should return the most recent WARNING log
+    assert representative.id == 2
+    assert representative.level == "WARNING"
+    assert representative.message == "new warning"

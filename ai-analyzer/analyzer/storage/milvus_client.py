@@ -1,9 +1,8 @@
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from loguru import logger
-import numpy as np
 import random
-from sklearn.cluster import KMeans
+# Removed sklearn and numpy imports as we're now using label-based clustering
 
 from pymilvus import connections, Collection, utility, DataType, CollectionSchema, FieldSchema
 from pymilvus.exceptions import MilvusException
@@ -162,47 +161,31 @@ class MilvusQueryEngine:
             logger.error(f"Error querying logs: {e}")
             raise
 
-    def cluster_similar_logs(self, logs: List[LogRecord], similarity_threshold: float = 0.8) -> List[LogCluster]:
-        """Group similar logs using vector similarity clustering"""
+    def cluster_similar_logs(self, logs: List[LogRecord]) -> List[LogCluster]:
+        """Group logs by Kubernetes label keys and values instead of embeddings"""
         if not logs:
             return []
 
-        logger.info(f"Clustering {len(logs)} logs with similarity threshold {similarity_threshold}")
+        logger.info(f"Clustering {len(logs)} logs by Kubernetes labels")
 
-        # Extract embeddings for clustering
-        embeddings = [log.embedding for log in logs]
-        embeddings_array = np.array(embeddings)
+        # Group logs by their label combinations
+        label_clusters = {}
 
-        # Determine optimal number of clusters (heuristic approach)
-        max_clusters = min(len(logs) // 5, 20)  # At least 5 logs per cluster, max 20 clusters
-        n_clusters = max(2, max_clusters)
+        for log in logs:
+            # Extract Kubernetes labels from metadata
+            labels = self._extract_labels(log)
 
-        if len(logs) <= max_clusters or len(logs) < 5:
-            # Each log is its own cluster
-            clusters = []
-            for log in logs:
-                clusters.append(LogCluster(
-                    representative_log=log,
-                    similar_logs=[log],
-                    count=1
-                ))
-            return clusters
+            # Create a hashable key from sorted label items
+            label_key = self._create_label_key(labels)
 
-        # Perform K-means clustering
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-        cluster_labels = kmeans.fit_predict(embeddings_array)
-
-        # Group logs by cluster
-        cluster_dict = {}
-        for i, label in enumerate(cluster_labels):
-            if label not in cluster_dict:
-                cluster_dict[label] = []
-            cluster_dict[label].append(logs[i])
+            if label_key not in label_clusters:
+                label_clusters[label_key] = []
+            label_clusters[label_key].append(log)
 
         # Create LogCluster objects
         clusters = []
-        for cluster_id, cluster_logs in cluster_dict.items():
-            # Choose representative log (first ERROR, then WARNING, then first log)
+        for label_key, cluster_logs in label_clusters.items():
+            # Choose representative log (prioritize ERROR/CRITICAL, then most recent)
             representative = self._choose_representative_log(cluster_logs)
 
             clusters.append(LogCluster(
@@ -214,7 +197,7 @@ class MilvusQueryEngine:
         # Sort clusters by severity and count
         clusters.sort(key=lambda c: (c.representative_log.is_error_or_critical(), c.count), reverse=True)
 
-        logger.info(f"Created {len(clusters)} log clusters")
+        logger.info(f"Created {len(clusters)} label-based clusters from {len(logs)} logs")
         return clusters
 
 
@@ -249,9 +232,58 @@ class MilvusQueryEngine:
             return False
 
     def _choose_representative_log(self, logs: List[LogRecord]) -> LogRecord:
-        """Choose a representative log from a group by random selection"""
+        """Choose a representative log from a group prioritizing errors and most recent"""
         if not logs:
             raise ValueError("Cannot choose representative from empty log list")
 
-        return random.choice(logs)
+        # First priority: ERROR or CRITICAL logs
+        error_logs = [log for log in logs if log.is_error_or_critical()]
+        if error_logs:
+            # Return most recent error log
+            return max(error_logs, key=lambda log: log.timestamp)
+
+        # Second priority: WARNING logs
+        warning_logs = [log for log in logs if log.level == "WARNING"]
+        if warning_logs:
+            # Return most recent warning log
+            return max(warning_logs, key=lambda log: log.timestamp)
+
+        # Fall back to most recent log of any level
+        return max(logs, key=lambda log: log.timestamp)
+
+    def _extract_labels(self, log: LogRecord) -> Dict[str, str]:
+        """Extract Kubernetes labels from log metadata"""
+        if not isinstance(log.metadata, dict):
+            return {}
+
+        # Labels can be stored in different places in metadata
+        labels = log.metadata.get("labels", {})
+
+        # Handle case where labels might be stored as kubernetes_labels
+        if not labels:
+            labels = log.metadata.get("kubernetes_labels", {})
+
+        # Handle case where labels are nested under kubernetes metadata
+        if not labels and "kubernetes" in log.metadata:
+            k8s_metadata = log.metadata["kubernetes"]
+            if isinstance(k8s_metadata, dict):
+                labels = k8s_metadata.get("labels", {})
+
+        # Ensure labels is a dict and contains only string values
+        if isinstance(labels, dict):
+            return {str(k): str(v) for k, v in labels.items()}
+
+        return {}
+
+    def _create_label_key(self, labels: Dict[str, str]) -> str:
+        """Create a hashable key from label dictionary"""
+        if not labels:
+            return "no-labels"
+
+        # Sort labels by key to ensure consistent grouping
+        sorted_labels = sorted(labels.items())
+
+        # Create key from label pairs
+        label_pairs = [f"{k}={v}" for k, v in sorted_labels]
+        return "|".join(label_pairs)
 
