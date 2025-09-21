@@ -4,7 +4,7 @@ Unit tests for the models.log module
 import pytest
 from datetime import date, datetime
 from analyzer.models.log import (
-    LogRecord, LogCluster, AnalyzedLog, DailyAnalysisResult,
+    LogRecord, LogCluster, DailyAnalysisResult,
     LogLevel, SeverityLevel
 )
 
@@ -253,18 +253,21 @@ def test_representative_not_in_logs_raises_error(sample_logs):
         )
 
 
-def test_cluster_with_severity(sample_logs):
-    """Test cluster with severity level"""
+def test_cluster_with_severity_and_reasoning(sample_logs):
+    """Test cluster with severity level and reasoning"""
     cluster = LogCluster(
         representative_log=sample_logs[0],
         similar_logs=sample_logs,
         count=3,
-        severity=SeverityLevel.HIGH
+        severity=SeverityLevel.HIGH,
+        reasoning="Database connection failures affecting multiple services"
     )
     assert cluster.severity == SeverityLevel.HIGH
     assert cluster.severity_score == 7
+    assert cluster.reasoning == "Database connection failures affecting multiple services"
     assert cluster.is_high_severity() is True
     assert cluster.is_actionable() is True
+    assert cluster.is_analyzed() is True
 
 
 def test_error_count_property(sample_logs):
@@ -337,60 +340,24 @@ def sample_log():
     )
 
 
-def test_valid_analyzed_log_creation(sample_log):
-    """Test creating a valid analyzed log"""
-    analyzed = AnalyzedLog(
-        log=sample_log,
+def test_cluster_to_dict(sample_logs):
+    """Test cluster dictionary conversion"""
+    cluster = LogCluster(
+        representative_log=sample_logs[0],
+        similar_logs=sample_logs[:2],
+        count=2,
         severity=SeverityLevel.HIGH,
-        reasoning="Critical database connection error"
+        reasoning="Database connection failures"
     )
-    assert analyzed.severity == SeverityLevel.HIGH
-    assert analyzed.severity_score == 7
-    assert analyzed.reasoning == "Critical database connection error"
-
-
-def test_invalid_severity_raises_error(sample_log):
-    """Test that invalid severity type raises error"""
-    with pytest.raises(ValueError, match="Severity must be a SeverityLevel enum"):
-        AnalyzedLog(
-            log=sample_log, severity="invalid", reasoning="test"
-        )
-
-
-def test_empty_reasoning_raises_error(sample_log):
-    """Test that empty reasoning raises error"""
-    with pytest.raises(ValueError, match="Reasoning cannot be empty"):
-        AnalyzedLog(
-            log=sample_log, severity=SeverityLevel.MEDIUM, reasoning=""
-        )
-
-
-
-
-def test_is_actionable(sample_log):
-    """Test actionable detection"""
-    actionable = AnalyzedLog(
-        log=sample_log, severity=SeverityLevel.HIGH, reasoning="test"
-    )
-    not_actionable = AnalyzedLog(
-        log=sample_log, severity=SeverityLevel.LOW, reasoning="test"
-    )
-
-    assert actionable.is_actionable() is True
-    assert not_actionable.is_actionable() is False
-
-
-def test_analyzed_log_to_dict(sample_log):
-    """Test dictionary conversion"""
-    analyzed = AnalyzedLog(
-        log=sample_log, severity=SeverityLevel.HIGH, reasoning="test"
-    )
-    result = analyzed.to_dict()
+    result = cluster.to_dict()
     assert result['severity'] == "high"
     assert result['severity_score'] == 7
-    assert result['reasoning'] == "test"
-    assert 'log' in result
+    assert result['reasoning'] == "Database connection failures"
+    assert result['count'] == 2
+    assert 'representative_log' in result
     assert 'is_actionable' in result
+    assert 'is_high_severity' in result
+    assert 'time_range' in result
 
 
 @pytest.fixture
@@ -401,10 +368,11 @@ def sample_analysis_result():
         metadata={}, embedding=[0.1], level="ERROR"
     )
     cluster = LogCluster(
-        representative_log=log, similar_logs=[log], count=1
-    )
-    analyzed_log = AnalyzedLog(
-        log=log, severity=SeverityLevel.HIGH, reasoning="test"
+        representative_log=log,
+        similar_logs=[log],
+        count=1,
+        severity=SeverityLevel.HIGH,
+        reasoning="Database connection failure detected"
     )
 
     return DailyAnalysisResult(
@@ -413,7 +381,6 @@ def sample_analysis_result():
         error_count=10,
         warning_count=20,
         analyzed_clusters=[cluster],
-        top_issues=[analyzed_log],
         health_score=0.7,
         llm_summary="System showing some issues",
         execution_time=30.5
@@ -435,7 +402,7 @@ def test_negative_logs_raises_error():
         DailyAnalysisResult(
             analysis_date=date(2022, 1, 1), total_logs_processed=-1,
             error_count=0, warning_count=0, analyzed_clusters=[],
-            top_issues=[], health_score=0.5, llm_summary="test", execution_time=1.0
+            health_score=0.5, llm_summary="test", execution_time=1.0
         )
 
 
@@ -445,7 +412,7 @@ def test_negative_error_count_raises_error():
         DailyAnalysisResult(
             analysis_date=date(2022, 1, 1), total_logs_processed=100,
             error_count=-1, warning_count=0, analyzed_clusters=[],
-            top_issues=[], health_score=0.5, llm_summary="test", execution_time=1.0
+            health_score=0.5, llm_summary="test", execution_time=1.0
         )
 
 
@@ -455,7 +422,7 @@ def test_negative_execution_time_raises_error():
         DailyAnalysisResult(
             analysis_date=date(2022, 1, 1), total_logs_processed=100,
             error_count=0, warning_count=0, analyzed_clusters=[],
-            top_issues=[], health_score=0.5, llm_summary="test", execution_time=-1.0
+            health_score=0.5, llm_summary="test", execution_time=-1.0
         )
 
 
@@ -465,25 +432,42 @@ def test_invalid_health_score_raises_error():
         DailyAnalysisResult(
             analysis_date=date(2022, 1, 1), total_logs_processed=100,
             error_count=0, warning_count=0, analyzed_clusters=[],
-            top_issues=[], health_score=1.5, llm_summary="test", execution_time=1.0
+            health_score=1.5, llm_summary="test", execution_time=1.0
         )
 
 
-def test_too_many_top_issues_raises_error():
-    """Test that too many top issues raises error"""
+def test_top_issues_property_limits_to_10():
+    """Test that top_issues property returns max 10 items"""
     log = LogRecord(
         id=1, timestamp=1640995200000, message="error", source="pod",
         metadata={}, embedding=[0.1], level="ERROR"
     )
-    issues = [AnalyzedLog(log=log, severity=SeverityLevel.MEDIUM, reasoning="test")
-              for _ in range(15)]  # Too many
 
-    with pytest.raises(ValueError, match="Top issues should not exceed 10 items"):
-        DailyAnalysisResult(
-            analysis_date=date(2022, 1, 1), total_logs_processed=100,
-            error_count=0, warning_count=0, analyzed_clusters=[],
-            top_issues=issues, health_score=0.5, llm_summary="test", execution_time=1.0
+    # Create 15 actionable clusters
+    clusters = []
+    for i in range(15):
+        cluster = LogCluster(
+            representative_log=log,
+            similar_logs=[log],
+            count=1,
+            severity=SeverityLevel.MEDIUM,  # Actionable
+            reasoning=f"Issue {i}"
         )
+        clusters.append(cluster)
+
+    result = DailyAnalysisResult(
+        analysis_date=date(2022, 1, 1),
+        total_logs_processed=100,
+        error_count=0,
+        warning_count=0,
+        analyzed_clusters=clusters,
+        health_score=0.5,
+        llm_summary="test",
+        execution_time=1.0
+    )
+
+    # top_issues should limit to 10
+    assert len(result.top_issues) == 10
 
 
 def test_empty_summary_raises_error():
@@ -492,7 +476,7 @@ def test_empty_summary_raises_error():
         DailyAnalysisResult(
             analysis_date=date(2022, 1, 1), total_logs_processed=100,
             error_count=0, warning_count=0, analyzed_clusters=[],
-            top_issues=[], health_score=0.5, llm_summary="", execution_time=1.0
+            health_score=0.5, llm_summary="", execution_time=1.0
         )
 
 
@@ -519,7 +503,7 @@ def test_zero_logs_rates():
     result = DailyAnalysisResult(
         analysis_date=date(2022, 1, 1), total_logs_processed=0,
         error_count=0, warning_count=0, analyzed_clusters=[],
-        top_issues=[], health_score=1.0, llm_summary="test", execution_time=1.0
+        health_score=1.0, llm_summary="test", execution_time=1.0
     )
     assert result.error_rate == 0.0
     assert result.warning_rate == 0.0
@@ -537,17 +521,17 @@ def test_get_health_status():
     healthy = DailyAnalysisResult(
         analysis_date=date(2022, 1, 1), total_logs_processed=100,
         error_count=0, warning_count=0, analyzed_clusters=[],
-        top_issues=[], health_score=0.9, llm_summary="test", execution_time=1.0
+        health_score=0.9, llm_summary="test", execution_time=1.0
     )
     warning = DailyAnalysisResult(
         analysis_date=date(2022, 1, 1), total_logs_processed=100,
         error_count=0, warning_count=0, analyzed_clusters=[],
-        top_issues=[], health_score=0.6, llm_summary="test", execution_time=1.0
+        health_score=0.6, llm_summary="test", execution_time=1.0
     )
     critical = DailyAnalysisResult(
         analysis_date=date(2022, 1, 1), total_logs_processed=100,
         error_count=0, warning_count=0, analyzed_clusters=[],
-        top_issues=[], health_score=0.3, llm_summary="test", execution_time=1.0
+        health_score=0.3, llm_summary="test", execution_time=1.0
     )
 
     assert healthy.get_health_status() == "healthy"

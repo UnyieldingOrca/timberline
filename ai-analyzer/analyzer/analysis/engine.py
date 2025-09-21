@@ -3,7 +3,7 @@ from typing import List, Optional
 from loguru import logger
 import time
 
-from ..models.log import DailyAnalysisResult, LogCluster, AnalyzedLog, LogRecord, SeverityLevel
+from ..models.log import DailyAnalysisResult, LogCluster, LogRecord, SeverityLevel
 from ..storage.milvus_client import MilvusQueryEngine, MilvusConnectionError
 from ..llm.client import LLMClient
 from ..reporting.generator import ReportGenerator, ReportGeneratorError
@@ -107,13 +107,11 @@ class AnalysisEngine:
             logger.info("Step 5: Calculating health score")
             health_score = self.generate_health_score(logs, analyzed_clusters)
 
-            # Step 6: Create top issues list
-            top_issues = self.get_top_issues(analyzed_clusters)
-
-            # Step 7: Generate LLM summary
-            logger.info("Step 7: Generating LLM summary")
+            # Step 6: Generate LLM summary
+            logger.info("Step 6: Generating LLM summary")
+            top_clusters = [c for c in analyzed_clusters if c.is_actionable()][:10]
             llm_summary = self._generate_summary(
-                len(logs), error_count, warning_count, top_issues
+                len(logs), error_count, warning_count, top_clusters
             )
 
             # Create result
@@ -123,7 +121,6 @@ class AnalysisEngine:
                 error_count=error_count,
                 warning_count=warning_count,
                 analyzed_clusters=analyzed_clusters,
-                top_issues=top_issues,
                 health_score=health_score,
                 llm_summary=llm_summary,
                 execution_time=time.time() - start_time
@@ -164,10 +161,10 @@ class AnalysisEngine:
         return []
 
     def _generate_summary(self, total_logs: int, error_count: int,
-                         warning_count: int, top_issues: List[AnalyzedLog]) -> str:
+                         warning_count: int, top_clusters: List[LogCluster]) -> str:
         """Generate LLM summary"""
         return self.llm_client.generate_daily_summary(
-            total_logs, error_count, warning_count, top_issues
+            total_logs, error_count, warning_count, top_clusters
         )
 
 
@@ -179,7 +176,6 @@ class AnalysisEngine:
             error_count=0,
             warning_count=0,
             analyzed_clusters=[],
-            top_issues=[],
             health_score=1.0,  # Perfect health when no logs
             llm_summary="No logs found in the specified time range.",
             execution_time=execution_time
@@ -193,24 +189,11 @@ class AnalysisEngine:
 
         logger.info(f"Processing {len(clusters)} log clusters")
 
-        # Rank clusters by severity using LLM
-        severity_levels = self.llm_client.rank_severity(clusters)
+        # Analyze clusters directly using LLM
+        self.llm_client.analyze_clusters(clusters)
 
-        # Update clusters with severity levels
-        for i, cluster in enumerate(clusters):
-            cluster.severity = severity_levels[i]
-
-        # Analyze representative logs from actionable clusters
+        # Count actionable clusters
         actionable_clusters = [c for c in clusters if c.is_actionable()]
-
-        if actionable_clusters:
-            representative_logs = [c.representative_log for c in actionable_clusters[:10]]  # Limit for efficiency
-            analyzed_logs = self.llm_client.analyze_log_batch(representative_logs)
-            # Update with LLM analysis results - use higher severity if found
-            for cluster, analyzed in zip(actionable_clusters, analyzed_logs):
-                if analyzed.severity.numeric_value > cluster.severity.numeric_value:
-                    cluster.severity = analyzed.severity
-
         logger.info(f"Processed clusters: {len(actionable_clusters)} actionable issues found")
         return clusters
 
@@ -248,25 +231,3 @@ class AnalysisEngine:
                    f"score: {health_score:.3f}")
         return health_score
 
-    def get_top_issues(self, analyzed_clusters: List[LogCluster], max_issues: int = 10) -> List[AnalyzedLog]:
-        """Get top issues sorted by severity"""
-        if not analyzed_clusters:
-            return []
-
-        all_issues = []
-
-        for cluster in analyzed_clusters:
-            if cluster.is_actionable():  # Only actionable issues
-                analyzed_log = AnalyzedLog(
-                    log=cluster.representative_log,
-                    severity=cluster.severity,
-                    reasoning=f"Cluster of {cluster.count} similar logs (severity: {cluster.severity.value})"
-                )
-                all_issues.append(analyzed_log)
-
-        # Sort by severity (descending) and return top issues
-        all_issues.sort(key=lambda x: x.severity.numeric_value, reverse=True)
-        top_issues = all_issues[:max_issues]
-
-        logger.info(f"Identified {len(top_issues)} top issues from {len(analyzed_clusters)} clusters")
-        return top_issues

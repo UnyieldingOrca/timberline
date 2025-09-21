@@ -11,7 +11,7 @@ from unittest.mock import patch, mock_open
 from analyzer.reporting.generator import ReportGenerator, ReportGeneratorError
 from analyzer.config.settings import Settings
 from analyzer.models.log import (
-    DailyAnalysisResult, LogRecord, LogCluster, AnalyzedLog, SeverityLevel
+    DailyAnalysisResult, LogRecord, LogCluster, SeverityLevel
 )
 
 
@@ -86,29 +86,39 @@ def sample_clusters(sample_logs):
 
 
 @pytest.fixture
-def sample_analyzed_logs(sample_logs):
-    """Create sample analyzed logs"""
-    return [
-        AnalyzedLog(
-            log=sample_logs[2],  # ERROR level
-            severity=SeverityLevel.HIGH,
-            reasoning="Database connection failure detected"
+def sample_analyzed_clusters(sample_logs):
+    """Create sample analyzed clusters with severity and reasoning"""
+    clusters = [
+        LogCluster(
+            representative_log=sample_logs[2],  # ERROR level
+            similar_logs=[sample_logs[2]],
+            count=1
         ),
-        AnalyzedLog(
-            log=sample_logs[4],  # CRITICAL level
-            severity=SeverityLevel.CRITICAL,
-            reasoning="Critical system failure"
+        LogCluster(
+            representative_log=sample_logs[4],  # CRITICAL level
+            similar_logs=[sample_logs[4]],
+            count=1
         ),
-        AnalyzedLog(
-            log=sample_logs[1],  # WARNING level
-            severity=SeverityLevel.MEDIUM,
-            reasoning="Performance degradation warning"
+        LogCluster(
+            representative_log=sample_logs[1],  # WARNING level
+            similar_logs=[sample_logs[1]],
+            count=1
         )
     ]
 
+    # Add severity and reasoning
+    clusters[0].severity = SeverityLevel.HIGH
+    clusters[0].reasoning = "Database connection failure detected"
+    clusters[1].severity = SeverityLevel.CRITICAL
+    clusters[1].reasoning = "Critical system failure"
+    clusters[2].severity = SeverityLevel.MEDIUM
+    clusters[2].reasoning = "Performance degradation warning"
+
+    return clusters
+
 
 @pytest.fixture
-def sample_analysis(sample_clusters, sample_analyzed_logs):
+def sample_analysis(sample_analyzed_clusters):
     """Create sample daily analysis result"""
     return DailyAnalysisResult(
         analysis_date=datetime(2022, 1, 1),
@@ -116,8 +126,7 @@ def sample_analysis(sample_clusters, sample_analyzed_logs):
         error_count=50,
         warning_count=150,
         health_score=0.75,  # Valid health score between 0 and 1
-        analyzed_clusters=sample_clusters,
-        top_issues=sample_analyzed_logs,
+        analyzed_clusters=sample_analyzed_clusters,
         llm_summary="System showing elevated error rates with database issues.",
         execution_time=45.2
     )
@@ -213,7 +222,6 @@ def test_generate_daily_report_empty_clusters(settings, sample_analysis):
 
     # Modify sample to have empty clusters
     sample_analysis.analyzed_clusters = []
-    sample_analysis.top_issues = []
     sample_analysis.llm_summary = None
 
     report = generator.generate_daily_report(sample_analysis)
@@ -466,8 +474,9 @@ def test_long_message_truncation_in_report(settings, sample_analysis):
 
     # Create a log with very long message
     long_message = "A" * 500
+    # Modify both the first cluster and the highest severity cluster (which will be top_issues[0])
     sample_analysis.analyzed_clusters[0].representative_log.message = long_message
-    sample_analysis.top_issues[0].log.message = long_message
+    sample_analysis.analyzed_clusters[1].representative_log.message = long_message  # CRITICAL severity cluster
 
     report = generator.generate_daily_report(sample_analysis)
 

@@ -10,7 +10,7 @@ from analyzer.llm.client import (
     LLMClient, LLMError, LLMConnectionError, LLMResponseError, LLMResponse
 )
 from analyzer.config.settings import Settings
-from analyzer.models.log import LogRecord, LogCluster, AnalyzedLog, SeverityLevel
+from analyzer.models.log import LogRecord, LogCluster, SeverityLevel
 
 @pytest.fixture
 def llm_settings():
@@ -200,13 +200,12 @@ def test_health_check_failure(llm_settings):
 
         assert result is False
 
-def test_analyze_log_batch_success(llm_settings, sample_logs):
-    """Test successful log batch analysis"""
+def test_analyze_clusters_success(llm_settings, sample_clusters):
+    """Test successful cluster analysis"""
     analysis_response = {
         "analyses": [
-            {"index": 1, "severity": 8, "reasoning": "Database failure"},
-            {"index": 2, "severity": 2, "reasoning": "Normal operation"},
-            {"index": 3, "severity": 5, "reasoning": "High memory"}
+            {"index": 1, "severity": 8, "reasoning": "Database connection failures affecting multiple services"},
+            {"index": 2, "severity": 3, "reasoning": "Normal informational messages"}
         ]
     }
 
@@ -221,33 +220,32 @@ def test_analyze_log_batch_success(llm_settings, sample_logs):
         mock_openai.return_value = mock_client
 
         client = LLMClient(llm_settings)
-        results = client.analyze_log_batch(sample_logs)
+        client.analyze_clusters(sample_clusters)
 
-        assert len(results) == 3
-        assert all(isinstance(r, AnalyzedLog) for r in results)
-        assert results[0].severity == SeverityLevel.HIGH
-        assert results[1].severity == SeverityLevel.LOW
+        assert sample_clusters[0].severity == SeverityLevel.HIGH
+        assert sample_clusters[0].reasoning == "Database connection failures affecting multiple services"
+        assert sample_clusters[1].severity == SeverityLevel.LOW
+        assert sample_clusters[1].reasoning == "Normal informational messages"
 
-def test_analyze_log_batch_json_parse_error(llm_settings, sample_logs):
-    """Test analyze_log_batch with JSON parse error - should raise exception"""
+def test_analyze_clusters_json_parse_error(llm_settings, sample_clusters):
+    """Test analyze_clusters with JSON parse error - should raise exception"""
     with patch('analyzer.llm.client.OpenAI') as mock_openai:
         mock_response = MagicMock()
         mock_response.choices = [MagicMock(message=MagicMock(content='Invalid JSON{'))]
         mock_openai.return_value.chat.completions.create.return_value = mock_response
-        
+
         client = LLMClient(llm_settings)
-        
+
         # Should raise JSONDecodeError when LLM returns invalid JSON
         with pytest.raises(json.JSONDecodeError):
-            client.analyze_log_batch(sample_logs[:3])
+            client.analyze_clusters(sample_clusters[:1])
 
-def test_analyze_log_batch_empty_input(llm_settings):
-    """Test log batch analysis with empty input"""
+def test_analyze_clusters_empty_input(llm_settings):
+    """Test cluster analysis with empty input"""
     with patch('analyzer.llm.client.OpenAI'):
         client = LLMClient(llm_settings)
-        results = client.analyze_log_batch([])
-
-        assert results == []
+        client.analyze_clusters([])
+        # Empty input should complete without error, no return value to check
 
 def test_rank_severity_success(llm_settings, sample_clusters):
     """Test successful severity ranking"""
@@ -307,14 +305,15 @@ def test_generate_daily_summary_success(llm_settings, sample_logs):
         mock_client.chat.completions.create.return_value = mock_response
         mock_openai.return_value = mock_client
 
-        # Create some analyzed logs
-        top_issues = [
-            AnalyzedLog(
-                log=sample_logs[0],
-                severity=SeverityLevel.HIGH,
-                reasoning="Critical database error"
-            )
-        ]
+        # Create some top issue clusters
+        cluster = LogCluster(
+            representative_log=sample_logs[0],
+            similar_logs=[sample_logs[0]],
+            count=1
+        )
+        cluster.severity = SeverityLevel.HIGH
+        cluster.reasoning = "Critical database error"
+        top_issues = [cluster]
 
         client = LLMClient(llm_settings)
         result = client.generate_daily_summary(1000, 50, 100, top_issues)
@@ -352,18 +351,18 @@ def test_generate_daily_summary_llm_failure(llm_settings):
         with pytest.raises(Exception, match="LLM failed"):
             client.generate_daily_summary(1000, 50, 100, [])
 
-def test_create_analysis_prompt(llm_settings, sample_logs):
-    """Test analysis prompt creation"""
+def test_create_cluster_analysis_prompt(llm_settings, sample_clusters):
+    """Test cluster analysis prompt creation"""
     with patch('analyzer.llm.client.OpenAI'):
         client = LLMClient(llm_settings)
 
-        prompt = client._create_analysis_prompt(sample_logs)
+        prompt = client._create_cluster_analysis_prompt(sample_clusters)
 
-        assert "Analyze these 3 log entries" in prompt
+        assert "Analyze these 2 log clusters" in prompt
         assert "ERROR" in prompt
         assert "Database connection failed" in prompt
         assert "JSON" in prompt
-        assert str(len(sample_logs)) in prompt
+        assert str(len(sample_clusters)) in prompt
 
 def test_create_ranking_prompt(llm_settings, sample_clusters):
     """Test ranking prompt creation"""
@@ -381,13 +380,14 @@ def test_create_summary_prompt(llm_settings, sample_logs):
     with patch('analyzer.llm.client.OpenAI'):
         client = LLMClient(llm_settings)
 
-        top_issues = [
-            AnalyzedLog(
-                log=sample_logs[0],
-                severity=SeverityLevel.HIGH,
-                reasoning="Database error"
-            )
-        ]
+        cluster = LogCluster(
+            representative_log=sample_logs[0],
+            similar_logs=[sample_logs[0]],
+            count=1
+        )
+        cluster.severity = SeverityLevel.HIGH
+        cluster.reasoning = "Database error"
+        top_issues = [cluster]
 
         prompt = client._create_summary_prompt(1000, 50, 100, top_issues)
 
@@ -397,42 +397,48 @@ def test_create_summary_prompt(llm_settings, sample_logs):
         assert "Top issues:" in prompt
         assert "Database connection failed" in prompt
 
-def test_parse_analysis_response_success(llm_settings, sample_logs):
-    """Test successful analysis response parsing"""
+def test_update_clusters_with_analysis_success(llm_settings, sample_clusters):
+    """Test successful cluster analysis update"""
     with patch('analyzer.llm.client.OpenAI'):
         client = LLMClient(llm_settings)
 
         analysis_data = {
             "analyses": [
                 {"index": 1, "severity": 9, "reasoning": "Critical database failure"},
-                {"index": 2, "severity": 3, "reasoning": "Normal processing"},
-                {"index": 3, "severity": 6, "reasoning": "Memory usage elevated"}
+                {"index": 2, "severity": 2, "reasoning": "Normal processing"}
             ]
         }
 
-        results = client._parse_analysis_response(sample_logs, analysis_data)
+        client._update_clusters_with_analysis(sample_clusters, analysis_data)
 
-        assert len(results) == 3
-        assert results[0].severity == SeverityLevel.CRITICAL
-        assert results[1].severity == SeverityLevel.LOW
-        assert results[2].severity == SeverityLevel.MEDIUM
+        assert len(sample_clusters) == 2
+        assert sample_clusters[0].severity == SeverityLevel.CRITICAL
+        assert sample_clusters[0].reasoning == "Critical database failure"
+        assert sample_clusters[1].severity == SeverityLevel.LOW
+        assert sample_clusters[1].reasoning == "Normal processing"
 
-def test_parse_analysis_response_missing_analyses(llm_settings, sample_logs):
-    """Test analysis response parsing with missing analyses - should raise exception"""
+def test_update_clusters_with_analysis_missing_analyses(llm_settings, sample_clusters):
+    """Test cluster analysis update with missing analyses - should use defaults"""
     with patch('analyzer.llm.client.OpenAI'):
         client = LLMClient(llm_settings)
 
         analysis_data = {
             "analyses": [
                 {"index": 1, "severity": 9, "reasoning": "Database failure"}
-                # Missing analyses for logs 2 and 3
+                # Missing analyses for cluster 2
             ]
         }
 
-        # Should raise LLMError when analysis is missing for logs
-        from analyzer.llm.client import LLMError
-        with pytest.raises(LLMError, match="Missing analysis for log 2"):
-            client._parse_analysis_response(sample_logs, analysis_data)
+        # Should handle missing analysis gracefully by using defaults
+        client._update_clusters_with_analysis(sample_clusters, analysis_data)
+
+        # First cluster should have the provided analysis
+        assert sample_clusters[0].severity == SeverityLevel.CRITICAL
+        assert sample_clusters[0].reasoning == "Database failure"
+
+        # Second cluster should have default values
+        assert sample_clusters[1].severity == SeverityLevel.MEDIUM
+        assert sample_clusters[1].reasoning == "Analysis not available from LLM"
 
 def test_llm_response_dataclass():
     """Test LLMResponse dataclass"""

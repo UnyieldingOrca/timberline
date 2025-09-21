@@ -65,15 +65,17 @@ class ReportGenerator:
                 ],
                 "top_issues": [
                     {
-                        "severity": issue.severity.value,
-                        "severity_score": issue.severity.numeric_value,
-                        "reasoning": issue.reasoning,
-                        "message": self._truncate_message(issue.log.message, 200),
-                        "source": issue.log.source,
-                        "timestamp": issue.log.timestamp,
-                        "level": issue.log.level
+                        "severity": cluster.severity.value if cluster.severity else "unknown",
+                        "severity_score": cluster.severity.numeric_value if cluster.severity else 0,
+                        "reasoning": cluster.reasoning or "No reasoning provided",
+                        "message": self._truncate_message(cluster.representative_log.message, 200),
+                        "source": cluster.representative_log.source,
+                        "timestamp": cluster.representative_log.timestamp,
+                        "level": cluster.representative_log.level,
+                        "cluster_count": cluster.count,
+                        "affected_sources": len(cluster.sources)
                     }
-                    for issue in analysis.top_issues
+                    for cluster in analysis.top_issues
                 ],
                 "llm_summary": analysis.llm_summary or "No summary available"
             }

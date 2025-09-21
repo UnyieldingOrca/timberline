@@ -114,11 +114,12 @@ class LogRecord:
 
 @dataclass
 class LogCluster:
-    """Represents a cluster of similar logs"""
+    """Represents a cluster of similar logs with LLM analysis"""
     representative_log: LogRecord
     similar_logs: List[LogRecord]
     count: int
     severity: Optional[SeverityLevel] = None  # Severity level set by LLM
+    reasoning: Optional[str] = None  # LLM reasoning for the severity assessment
 
     def __post_init__(self):
         """Validate the cluster after initialization"""
@@ -152,44 +153,41 @@ class LogCluster:
         """Check if cluster indicates actionable issues"""
         return self.severity is not None and self.severity.is_actionable()
 
+    def is_analyzed(self) -> bool:
+        """Check if cluster has been analyzed by LLM"""
+        return self.severity is not None and self.reasoning is not None
+
     @property
     def severity_score(self) -> Optional[int]:
         """Get numeric severity score for backward compatibility"""
         return self.severity.numeric_value if self.severity else None
 
-
-@dataclass
-class AnalyzedLog:
-    """Represents a log that has been analyzed by LLM"""
-    log: LogRecord
-    severity: SeverityLevel
-    reasoning: str
-
-    def __post_init__(self):
-        """Validate the analyzed log after initialization"""
-        if not isinstance(self.severity, SeverityLevel):
-            raise ValueError("Severity must be a SeverityLevel enum")
-        if not self.reasoning.strip():
-            raise ValueError("Reasoning cannot be empty")
-
-    def is_actionable(self) -> bool:
-        """Check if this analysis indicates actionable issues"""
-        return self.severity.is_actionable()
-
-    @property
-    def severity_score(self) -> int:
-        """Get numeric severity score for backward compatibility"""
-        return self.severity.numeric_value
-
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation"""
-        return {
-            'log': self.log.to_dict(),
-            'severity': self.severity.value,
-            'severity_score': self.severity.numeric_value,
-            'reasoning': self.reasoning,
-            'is_actionable': self.is_actionable()
+        result = {
+            'representative_log': self.representative_log.to_dict(),
+            'count': self.count,
+            'error_count': self.error_count,
+            'sources': self.sources,
+            'time_range': {
+                'start': self.get_time_range()[0].isoformat(),
+                'end': self.get_time_range()[1].isoformat()
+            },
+            'is_actionable': self.is_actionable(),
+            'is_high_severity': self.is_high_severity()
         }
+
+        if self.severity:
+            result.update({
+                'severity': self.severity.value,
+                'severity_score': self.severity.numeric_value
+            })
+
+        if self.reasoning:
+            result['reasoning'] = self.reasoning
+
+        return result
+
 
 
 @dataclass
@@ -200,7 +198,6 @@ class DailyAnalysisResult:
     error_count: int
     warning_count: int
     analyzed_clusters: List[LogCluster]
-    top_issues: List[AnalyzedLog]  # Top 10 by severity
     health_score: float  # 0-1 scale
     llm_summary: str
     execution_time: float
@@ -215,8 +212,6 @@ class DailyAnalysisResult:
             raise ValueError("Health score must be between 0 and 1")
         if self.execution_time < 0:
             raise ValueError("Execution time cannot be negative")
-        if len(self.top_issues) > 10:
-            raise ValueError("Top issues should not exceed 10 items")
         if not self.llm_summary.strip():
             raise ValueError("LLM summary cannot be empty")
 
@@ -239,9 +234,15 @@ class DailyAnalysisResult:
             return 0.0
         return (self.warning_count / self.total_logs_processed) * 100
 
-    def get_critical_issues(self) -> List[AnalyzedLog]:
-        """Get issues with high or critical severity"""
-        return [issue for issue in self.top_issues if issue.severity.is_high_severity()]
+    @property
+    def top_issues(self) -> List[LogCluster]:
+        """Get top 10 actionable clusters sorted by severity"""
+        actionable_clusters = [c for c in self.analyzed_clusters if c.is_actionable()]
+        return sorted(actionable_clusters, key=lambda x: x.severity.numeric_value, reverse=True)[:10]
+
+    def get_critical_issues(self) -> List[LogCluster]:
+        """Get clusters with high or critical severity"""
+        return [cluster for cluster in self.analyzed_clusters if cluster.is_high_severity()]
 
     def get_health_status(self) -> Literal["healthy", "warning", "critical"]:
         """Get health status based on health score"""
@@ -266,6 +267,7 @@ class DailyAnalysisResult:
             'health_status': self.get_health_status(),
             'critical_issues_count': len(self.get_critical_issues()),
             'total_clusters': len(self.analyzed_clusters),
+            'top_issues_count': len(self.top_issues),
             'execution_time': round(self.execution_time, 2),
             'llm_summary': self.llm_summary
         }

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from openai import OpenAI
 
-from ..models.log import LogRecord, LogCluster, AnalyzedLog, SeverityLevel
+from ..models.log import LogRecord, LogCluster, SeverityLevel
 from ..config.settings import Settings
 
 
@@ -113,20 +113,20 @@ class LLMClient:
             logger.error(f"LLM health check failed: {e}")
             return False
 
-    def analyze_log_batch(self, logs: List[LogRecord]) -> List[AnalyzedLog]:
-        """Analyze a batch of logs and return severity assessments"""
-        if not logs:
-            return []
+    def analyze_clusters(self, clusters: List[LogCluster]) -> None:
+        """Analyze log clusters and update them with severity and reasoning"""
+        if not clusters:
+            return
 
-        logger.info(f"Analyzing batch of {len(logs)} logs")
+        logger.info(f"Analyzing {len(clusters)} clusters")
 
-        # Create analysis prompt
-        prompt = self._create_analysis_prompt(logs)
+        # Create cluster analysis prompt
+        prompt = self._create_cluster_analysis_prompt(clusters)
         response = self.call_llm(prompt, max_tokens=2000)
 
-        # Parse JSON response
+        # Parse JSON response and update clusters
         analysis_data = json.loads(response.content)
-        return self._parse_analysis_response(logs, analysis_data)
+        self._update_clusters_with_analysis(clusters, analysis_data)
 
     def rank_severity(self, clusters: List[LogCluster]) -> List[SeverityLevel]:
         """Rank log clusters by severity level"""
@@ -157,11 +157,11 @@ class LLMClient:
         return severity_levels
 
     def generate_daily_summary(self, total_logs: int, error_count: int, warning_count: int,
-                             top_issues: List[AnalyzedLog]) -> str:
+                             top_clusters: List[LogCluster]) -> str:
         """Generate daily summary using LLM"""
         logger.info("Generating daily summary with LLM")
 
-        prompt = self._create_summary_prompt(total_logs, error_count, warning_count, top_issues)
+        prompt = self._create_summary_prompt(total_logs, error_count, warning_count, top_clusters)
         response = self.call_llm(prompt, max_tokens=800)
 
         summary = response.content.strip()
@@ -224,16 +224,17 @@ Provide exactly {len(clusters)} scores in order."""
         return prompt
 
     def _create_summary_prompt(self, total_logs: int, error_count: int, warning_count: int,
-                             top_issues: List[AnalyzedLog]) -> str:
+                             top_clusters: List[LogCluster]) -> str:
         """Create prompt for daily summary"""
         error_rate = (error_count / total_logs * 100) if total_logs > 0 else 0
         warning_rate = (warning_count / total_logs * 100) if total_logs > 0 else 0
 
         issues_text = ""
-        if top_issues:
+        if top_clusters:
             issues_text = "Top issues:\n"
-            for i, issue in enumerate(top_issues[:5], 1):
-                issues_text += f"{i}. [Severity {issue.severity}] {issue.log.message[:100]}\n"
+            for i, cluster in enumerate(top_clusters[:5], 1):
+                severity_text = cluster.severity.value if cluster.severity else "unknown"
+                issues_text += f"{i}. [Severity {severity_text}] {cluster.representative_log.message[:100]} (affects {cluster.count} logs)\n"
 
         prompt = f"""Generate a concise daily log analysis summary.
 
@@ -253,38 +254,72 @@ Be concise and actionable."""
 
         return prompt
 
-    def _parse_analysis_response(self, logs: List[LogRecord], analysis_data: Dict) -> List[AnalyzedLog]:
-        """Parse LLM analysis response into AnalyzedLog objects"""
-        analyzed_logs = []
+    def _create_cluster_analysis_prompt(self, clusters: List[LogCluster]) -> str:
+        """Create prompt for analyzing log clusters"""
+        cluster_samples = []
+        for i, cluster in enumerate(clusters, 1):
+            cluster_samples.append(
+                f"{i}. [{cluster.representative_log.level}] {cluster.representative_log.message} "
+                f"(occurs {cluster.count} times from {len(cluster.sources)} sources)"
+            )
+
+        prompt = f"""Analyze these {len(clusters)} log clusters and assess their severity and provide reasoning.
+
+Log clusters:
+{chr(10).join(cluster_samples)}
+
+Respond with JSON in this exact format:
+{{
+  "analyses": [
+    {{
+      "index": 1,
+      "severity": 8,
+      "reasoning": "Database connection failure indicates system instability affecting multiple services"
+    }}
+  ]
+}}
+
+Severity scale: 1-10 (1=debug info, 5=warning, 8=error, 10=critical)
+Consider:
+- Log level and message content
+- Number of occurrences (frequency)
+- Number of affected sources
+- Impact on system functionality
+
+Provide analysis for ALL {len(clusters)} clusters."""
+
+        return prompt
+
+    def _update_clusters_with_analysis(self, clusters: List[LogCluster], analysis_data: Dict) -> None:
+        """Update clusters with LLM analysis results"""
         analyses = analysis_data.get("analyses", [])
 
-        for log in logs:
+        for cluster in clusters:
             # Find matching analysis by index
             analysis = None
+            cluster_index = clusters.index(cluster) + 1
             for a in analyses:
-                if a.get("index", 0) == len(analyzed_logs) + 1:
+                if a.get("index", 0) == cluster_index:
                     analysis = a
                     break
 
             if not analysis:
-                raise LLMError(f"Missing analysis for log {len(analyzed_logs) + 1} in LLM response")
+                logger.warning(f"Missing analysis for cluster {cluster_index}, using defaults")
+                cluster.severity = SeverityLevel.MEDIUM
+                cluster.reasoning = "Analysis not available from LLM"
+                continue
 
+            # Extract and validate severity
             severity_score = max(1, min(10, analysis.get("severity", 5)))
             reasoning = analysis.get("reasoning", "No specific reasoning provided")
 
             # Convert numeric severity to SeverityLevel enum
             try:
-                severity_level = SeverityLevel.from_numeric(severity_score)
+                cluster.severity = SeverityLevel.from_numeric(severity_score)
             except ValueError:
                 logger.warning(f"Invalid severity score {severity_score}, defaulting to MEDIUM")
-                severity_level = SeverityLevel.MEDIUM
+                cluster.severity = SeverityLevel.MEDIUM
 
-            analyzed_logs.append(AnalyzedLog(
-                log=log,
-                severity=severity_level,
-                reasoning=reasoning
-            ))
-
-        return analyzed_logs
+            cluster.reasoning = reasoning
 
 
