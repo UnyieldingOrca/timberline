@@ -43,7 +43,7 @@ func main() {
 	cancel()
 
 	// Initialize storage
-	storageClient := storage.NewMilvusClient(cfg.MilvusAddress, embeddingService, cfg.EmbeddingDimension, cfg.SimilarityThreshold)
+	storageClient := storage.NewMilvusClient(cfg.MilvusAddress, embeddingService, cfg.EmbeddingDimension, cfg.SimilarityThreshold, cfg.MinExamplesBeforeExclusion)
 
 	// Connect to storage with retry
 	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)

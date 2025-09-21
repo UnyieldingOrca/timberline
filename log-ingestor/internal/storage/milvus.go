@@ -33,13 +33,14 @@ const (
 )
 
 type MilvusClient struct {
-	client              *milvusclient.Client
-	collection          string
-	embeddingDim        int
-	embeddingService    embedding.Interface
-	logger              *logrus.Logger
-	connected           bool
-	similarityThreshold float32
+	client                     *milvusclient.Client
+	collection                 string
+	embeddingDim               int
+	embeddingService           embedding.Interface
+	logger                     *logrus.Logger
+	connected                  bool
+	similarityThreshold        float32
+	minExamplesBeforeExclusion int
 }
 
 // SearchResult represents a search result with ID and similarity score
@@ -56,14 +57,15 @@ type StorageInterface interface {
 	CreateCollection(ctx context.Context) error
 }
 
-func NewMilvusClient(address string, embeddingService embedding.Interface, embeddingDim int, similarityThreshold float32) *MilvusClient {
+func NewMilvusClient(address string, embeddingService embedding.Interface, embeddingDim int, similarityThreshold float32, minExamplesBeforeExclusion int) *MilvusClient {
 	return &MilvusClient{
-		collection:          "timberline_logs",
-		embeddingDim:        embeddingDim,
-		embeddingService:    embeddingService,
-		logger:              logrus.New(),
-		connected:           false,
-		similarityThreshold: similarityThreshold,
+		collection:                 "timberline_logs",
+		embeddingDim:               embeddingDim,
+		embeddingService:           embeddingService,
+		logger:                     logrus.New(),
+		connected:                  false,
+		similarityThreshold:        similarityThreshold,
+		minExamplesBeforeExclusion: minExamplesBeforeExclusion,
 	}
 }
 
@@ -365,29 +367,58 @@ func (m *MilvusClient) StoreLog(ctx context.Context, log *models.LogEntry) error
 
 	// Check for similar logs if similarity threshold is enabled (> 0)
 	if m.similarityThreshold > 0 {
-		searchResults, err := m.SearchSimilarLogs(ctx, emb, 1)
+		// Search for similar logs with a reasonable limit to count them and find the most similar
+		searchResults, err := m.SearchSimilarLogs(ctx, emb, 100)
 		if err != nil {
 			m.logger.WithError(err).Warn("Failed to search for similar logs, proceeding with insertion")
-		} else if len(searchResults) > 0 && searchResults[0].Score > m.similarityThreshold {
-			// Found a similar log, count it as duplicate
-			similarLog := searchResults[0]
-			m.logger.WithFields(logrus.Fields{
-				"message":    log.Message,
-				"similarity": similarLog.Score,
-				"threshold":  m.similarityThreshold,
-				"similar_id": similarLog.ID,
-			}).Debug("Detected duplicate log")
+		} else if len(searchResults) > 0 {
+			// Count similar logs above threshold and find the most similar
+			var mostSimilarLog *SearchResult
+			similarCount := 0
 
-			// Update duplicate count for existing log
-			if updateErr := m.UpdateDuplicateCount(ctx, similarLog.ID); updateErr != nil {
-				m.logger.WithError(updateErr).Warn("Failed to update duplicate count")
+			for i := range searchResults {
+				if searchResults[i].Score > m.similarityThreshold {
+					similarCount++
+					if mostSimilarLog == nil || searchResults[i].Score > mostSimilarLog.Score {
+						mostSimilarLog = &searchResults[i]
+					}
+				}
 			}
 
-			m.logger.WithFields(logrus.Fields{
-				"message":    log.Message,
-				"similar_id": similarLog.ID,
-			}).Info("Log is duplicate, count updated")
-			return nil
+			if mostSimilarLog != nil {
+				// Check if we have enough examples stored already
+				if similarCount >= m.minExamplesBeforeExclusion {
+					// We have enough examples, just increment duplicate count and don't store
+					m.logger.WithFields(logrus.Fields{
+						"message":       log.Message,
+						"similarity":    mostSimilarLog.Score,
+						"threshold":     m.similarityThreshold,
+						"similar_id":    mostSimilarLog.ID,
+						"similar_count": similarCount,
+						"min_examples":  m.minExamplesBeforeExclusion,
+					}).Debug("Detected duplicate log with sufficient examples, excluding from storage")
+
+					// Update duplicate count for the most similar existing log
+					if updateErr := m.UpdateDuplicateCount(ctx, mostSimilarLog.ID); updateErr != nil {
+						m.logger.WithError(updateErr).Warn("Failed to update duplicate count")
+					}
+
+					m.logger.WithFields(logrus.Fields{
+						"message":    log.Message,
+						"similar_id": mostSimilarLog.ID,
+					}).Info("Log is duplicate with sufficient examples, count updated")
+					return nil
+				} else {
+					// We don't have enough examples yet, store this log as another example
+					m.logger.WithFields(logrus.Fields{
+						"message":       log.Message,
+						"similarity":    mostSimilarLog.Score,
+						"threshold":     m.similarityThreshold,
+						"similar_count": similarCount,
+						"min_examples":  m.minExamplesBeforeExclusion,
+					}).Debug("Detected similar log but storing as additional example")
+				}
+			}
 		}
 	}
 

@@ -225,6 +225,22 @@ func TestValidate(t *testing.T) {
 			expectError: true,
 			errorField:  "SIMILARITY_THRESHOLD",
 		},
+		{
+			name: "Invalid MinExamplesBeforeExclusion - zero",
+			config: &Config{
+				ServerPort:                 8080,
+				MetricsPort:                9090,
+				BatchSize:                  100,
+				MaxRequestSize:             1024,
+				RateLimitRPS:               1000,
+				EmbeddingEndpoint:          "http://test",
+				EmbeddingDimension:         768,
+				SimilarityThreshold:        0.95,
+				MinExamplesBeforeExclusion: 0,
+			},
+			expectError: true,
+			errorField:  "MIN_EXAMPLES_BEFORE_EXCLUSION",
+		},
 	}
 
 	for _, tt := range tests {
