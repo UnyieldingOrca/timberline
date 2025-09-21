@@ -5,7 +5,7 @@ import pytest
 from datetime import date, datetime
 from analyzer.models.log import (
     LogRecord, LogCluster, AnalyzedLog, DailyAnalysisResult,
-    LogLevel, LogCategory
+    LogLevel
 )
 
 
@@ -18,12 +18,6 @@ def test_log_level_values():
     assert LogLevel.CRITICAL.value == "CRITICAL"
 
 
-def test_log_category_values():
-    """Test that all expected categories exist"""
-    assert LogCategory.ERROR.value == "error"
-    assert LogCategory.WARNING.value == "warning"
-    assert LogCategory.INFO.value == "info"
-    assert LogCategory.PERFORMANCE.value == "performance"
 
 
 @pytest.fixture
@@ -285,19 +279,17 @@ def test_valid_analyzed_log_creation(sample_log):
     analyzed = AnalyzedLog(
         log=sample_log,
         severity=8,
-        reasoning="Critical database connection error",
-        category="error"
+        reasoning="Critical database connection error"
     )
     assert analyzed.severity == 8
     assert analyzed.reasoning == "Critical database connection error"
-    assert analyzed.category == "error"
 
 
 def test_invalid_severity_raises_error(sample_log):
     """Test that invalid severity raises error"""
     with pytest.raises(ValueError, match="Severity must be between 1 and 10"):
         AnalyzedLog(
-            log=sample_log, severity=15, reasoning="test", category="error"
+            log=sample_log, severity=15, reasoning="test"
         )
 
 
@@ -305,33 +297,19 @@ def test_empty_reasoning_raises_error(sample_log):
     """Test that empty reasoning raises error"""
     with pytest.raises(ValueError, match="Reasoning cannot be empty"):
         AnalyzedLog(
-            log=sample_log, severity=5, reasoning="", category="error"
+            log=sample_log, severity=5, reasoning=""
         )
 
 
-def test_invalid_category_raises_error(sample_log):
-    """Test that invalid category raises error"""
-    with pytest.raises(ValueError, match="Invalid category"):
-        AnalyzedLog(
-            log=sample_log, severity=5, reasoning="test", category="invalid"
-        )
-
-
-def test_category_enum_property(sample_log):
-    """Test category enum property"""
-    analyzed = AnalyzedLog(
-        log=sample_log, severity=8, reasoning="test", category="error"
-    )
-    assert analyzed.category_enum == LogCategory.ERROR
 
 
 def test_is_actionable(sample_log):
     """Test actionable detection"""
     actionable = AnalyzedLog(
-        log=sample_log, severity=7, reasoning="test", category="error"
+        log=sample_log, severity=7, reasoning="test"
     )
     not_actionable = AnalyzedLog(
-        log=sample_log, severity=3, reasoning="test", category="info"
+        log=sample_log, severity=3, reasoning="test"
     )
 
     assert actionable.is_actionable() is True
@@ -341,12 +319,11 @@ def test_is_actionable(sample_log):
 def test_analyzed_log_to_dict(sample_log):
     """Test dictionary conversion"""
     analyzed = AnalyzedLog(
-        log=sample_log, severity=8, reasoning="test", category="error"
+        log=sample_log, severity=8, reasoning="test"
     )
     result = analyzed.to_dict()
     assert result['severity'] == 8
     assert result['reasoning'] == "test"
-    assert result['category'] == "error"
     assert 'log' in result
     assert 'is_actionable' in result
 
@@ -362,7 +339,7 @@ def sample_analysis_result():
         representative_log=log, similar_logs=[log], count=1
     )
     analyzed_log = AnalyzedLog(
-        log=log, severity=8, reasoning="test", category="error"
+        log=log, severity=8, reasoning="test"
     )
 
     return DailyAnalysisResult(
@@ -433,7 +410,7 @@ def test_too_many_top_issues_raises_error():
         id=1, timestamp=1640995200000, message="error", source="pod",
         metadata={}, embedding=[0.1], level="ERROR"
     )
-    issues = [AnalyzedLog(log=log, severity=5, reasoning="test", category="error")
+    issues = [AnalyzedLog(log=log, severity=5, reasoning="test")
               for _ in range(15)]  # Too many
 
     with pytest.raises(ValueError, match="Top issues should not exceed 10 items"):

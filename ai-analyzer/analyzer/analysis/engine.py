@@ -257,19 +257,10 @@ class AnalysisEngine:
         for cluster in analyzed_clusters:
             severity_score = getattr(cluster, 'severity_score', 0)
             if severity_score >= 5:  # Only significant issues
-                # Determine category based on severity and log level
-                if severity_score >= 8 or cluster.representative_log.level in ["ERROR", "CRITICAL"]:
-                    category = "error"
-                elif severity_score >= 6 or cluster.representative_log.level == "WARNING":
-                    category = "warning"
-                else:
-                    category = "info"
-
                 analyzed_log = AnalyzedLog(
                     log=cluster.representative_log,
                     severity=severity_score,
-                    reasoning=f"Cluster of {cluster.count} similar logs (severity: {severity_score})",
-                    category=category
+                    reasoning=f"Cluster of {cluster.count} similar logs (severity: {severity_score})"
                 )
                 all_issues.append(analyzed_log)
 

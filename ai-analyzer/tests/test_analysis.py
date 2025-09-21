@@ -178,8 +178,8 @@ def test_analyze_daily_logs_success(settings, mock_components, sample_logs, samp
     mock_components['milvus'].cluster_similar_logs.return_value = sample_clusters
     mock_components['llm'].rank_severity.return_value = [8, 10, 5]
     mock_components['llm'].analyze_log_batch.return_value = [
-        AnalyzedLog(log=sample_logs[2], severity=8, reasoning="Database error", category="error"),
-        AnalyzedLog(log=sample_logs[4], severity=10, reasoning="Critical failure", category="error")
+        AnalyzedLog(log=sample_logs[2], severity=8, reasoning="Database error"),
+        AnalyzedLog(log=sample_logs[4], severity=10, reasoning="Critical failure")
     ]
     mock_components['llm'].generate_daily_summary.return_value = "System has some issues"
     mock_components['reporter'].generate_and_save_report.return_value = "/tmp/report.json"
@@ -318,8 +318,8 @@ def test_process_log_clusters_success(settings, mock_components, sample_clusters
 
     mock_components['llm'].rank_severity.return_value = [8, 10, 5]
     mock_components['llm'].analyze_log_batch.return_value = [
-        AnalyzedLog(log=sample_clusters[0].representative_log, severity=8, reasoning="Error", category="error"),
-        AnalyzedLog(log=sample_clusters[1].representative_log, severity=10, reasoning="Critical", category="error")
+        AnalyzedLog(log=sample_clusters[0].representative_log, severity=8, reasoning="Error"),
+        AnalyzedLog(log=sample_clusters[1].representative_log, severity=10, reasoning="Critical")
     ]
 
     result_clusters = engine.process_log_clusters(sample_clusters)

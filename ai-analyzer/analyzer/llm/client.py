@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from openai import OpenAI
 
-from ..models.log import LogRecord, LogCluster, AnalyzedLog, LogCategory
+from ..models.log import LogRecord, LogCluster, AnalyzedLog
 from ..config.settings import Settings
 
 
@@ -167,7 +167,7 @@ class LLMClient:
         for i, log in enumerate(logs[:10]):  # Limit to first 10 for prompt size
             log_samples.append(f"{i+1}. [{log.level}] {log.source}: {log.message[:200]}")
 
-        prompt = f"""Analyze these {len(logs)} log entries and assess their severity and category.
+        prompt = f"""Analyze these {len(logs)} log entries and assess their severity.
 
 Log entries:
 {chr(10).join(log_samples)}
@@ -178,14 +178,12 @@ Respond with JSON in this exact format:
     {{
       "index": 1,
       "severity": 8,
-      "category": "error",
       "reasoning": "Database connection failure indicates system instability"
     }}
   ]
 }}
 
 Severity scale: 1-10 (1=debug info, 5=warning, 8=error, 10=critical)
-Categories: {[cat.value for cat in LogCategory]}
 Provide analysis for ALL {len(logs)} logs."""
 
         return prompt
@@ -263,14 +261,12 @@ Be concise and actionable."""
                 raise LLMError(f"Missing analysis for log {len(analyzed_logs) + 1} in LLM response")
 
             severity = max(1, min(10, analysis.get("severity", 5)))
-            category = analysis.get("category", "info")
             reasoning = analysis.get("reasoning", "No specific reasoning provided")
 
             analyzed_logs.append(AnalyzedLog(
                 log=log,
                 severity=severity,
-                reasoning=reasoning,
-                category=category
+                reasoning=reasoning
             ))
 
         return analyzed_logs

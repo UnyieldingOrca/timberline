@@ -13,12 +13,6 @@ class LogLevel(Enum):
     CRITICAL = "CRITICAL"
 
 
-class LogCategory(Enum):
-    """Enumeration for analyzed log categories"""
-    ERROR = "error"
-    WARNING = "warning"
-    INFO = "info"
-    PERFORMANCE = "performance"
 
 
 @dataclass
@@ -119,7 +113,6 @@ class AnalyzedLog:
     log: LogRecord
     severity: int  # 1-10 scale from LLM
     reasoning: str
-    category: str  # LogCategory enum value
 
     def __post_init__(self):
         """Validate the analyzed log after initialization"""
@@ -127,17 +120,10 @@ class AnalyzedLog:
             raise ValueError("Severity must be between 1 and 10")
         if not self.reasoning.strip():
             raise ValueError("Reasoning cannot be empty")
-        if self.category not in [cat.value for cat in LogCategory]:
-            raise ValueError(f"Invalid category: {self.category}")
-
-    @property
-    def category_enum(self) -> LogCategory:
-        """Get category as enum"""
-        return LogCategory(self.category)
 
     def is_actionable(self) -> bool:
         """Check if this analysis indicates actionable issues"""
-        return self.severity >= 5 and self.category_enum in [LogCategory.ERROR, LogCategory.WARNING]
+        return self.severity >= 5
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation"""
@@ -145,7 +131,6 @@ class AnalyzedLog:
             'log': self.log.to_dict(),
             'severity': self.severity,
             'reasoning': self.reasoning,
-            'category': self.category,
             'is_actionable': self.is_actionable()
         }
 

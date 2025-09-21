@@ -92,20 +92,17 @@ def sample_analyzed_logs(sample_logs):
         AnalyzedLog(
             log=sample_logs[2],  # ERROR level
             severity=8,
-            reasoning="Database connection failure detected",
-            category="error"
+            reasoning="Database connection failure detected"
         ),
         AnalyzedLog(
             log=sample_logs[4],  # CRITICAL level
             severity=10,
-            reasoning="Critical system failure",
-            category="error"  # Use valid category
+            reasoning="Critical system failure"
         ),
         AnalyzedLog(
             log=sample_logs[1],  # WARNING level
             severity=5,
-            reasoning="Performance degradation warning",
-            category="warning"
+            reasoning="Performance degradation warning"
         )
     ]
 
@@ -195,7 +192,6 @@ def test_generate_daily_report_success(settings, sample_analysis):
     assert len(report["top_issues"]) == 3
     issue = report["top_issues"][0]
     assert "severity" in issue
-    assert "category" in issue
     assert "reasoning" in issue
     assert "message" in issue
     assert "source" in issue

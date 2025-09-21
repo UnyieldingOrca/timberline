@@ -204,9 +204,9 @@ def test_analyze_log_batch_success(llm_settings, sample_logs):
     """Test successful log batch analysis"""
     analysis_response = {
         "analyses": [
-            {"index": 1, "severity": 8, "category": "error", "reasoning": "Database failure"},
-            {"index": 2, "severity": 2, "category": "info", "reasoning": "Normal operation"},
-            {"index": 3, "severity": 5, "category": "warning", "reasoning": "High memory"}
+            {"index": 1, "severity": 8, "reasoning": "Database failure"},
+            {"index": 2, "severity": 2, "reasoning": "Normal operation"},
+            {"index": 3, "severity": 5, "reasoning": "High memory"}
         ]
     }
 
@@ -226,7 +226,6 @@ def test_analyze_log_batch_success(llm_settings, sample_logs):
         assert len(results) == 3
         assert all(isinstance(r, AnalyzedLog) for r in results)
         assert results[0].severity == 8
-        assert results[0].category == "error"
         assert results[1].severity == 2
 
 def test_analyze_log_batch_json_parse_error(llm_settings, sample_logs):
@@ -313,8 +312,7 @@ def test_generate_daily_summary_success(llm_settings, sample_logs):
             AnalyzedLog(
                 log=sample_logs[0],
                 severity=8,
-                reasoning="Critical database error",
-                category="error"
+                reasoning="Critical database error"
             )
         ]
 
@@ -387,8 +385,7 @@ def test_create_summary_prompt(llm_settings, sample_logs):
             AnalyzedLog(
                 log=sample_logs[0],
                 severity=8,
-                reasoning="Database error",
-                category="error"
+                reasoning="Database error"
             )
         ]
 
@@ -407,9 +404,9 @@ def test_parse_analysis_response_success(llm_settings, sample_logs):
 
         analysis_data = {
             "analyses": [
-                {"index": 1, "severity": 9, "category": "error", "reasoning": "Critical database failure"},
-                {"index": 2, "severity": 3, "category": "info", "reasoning": "Normal processing"},
-                {"index": 3, "severity": 6, "category": "warning", "reasoning": "Memory usage elevated"}
+                {"index": 1, "severity": 9, "reasoning": "Critical database failure"},
+                {"index": 2, "severity": 3, "reasoning": "Normal processing"},
+                {"index": 3, "severity": 6, "reasoning": "Memory usage elevated"}
             ]
         }
 
@@ -417,9 +414,8 @@ def test_parse_analysis_response_success(llm_settings, sample_logs):
 
         assert len(results) == 3
         assert results[0].severity == 9
-        assert results[0].category == "error"
         assert results[1].severity == 3
-        assert results[2].category == "warning"
+        assert results[2].severity == 6
 
 def test_parse_analysis_response_missing_analyses(llm_settings, sample_logs):
     """Test analysis response parsing with missing analyses - should raise exception"""
@@ -428,7 +424,7 @@ def test_parse_analysis_response_missing_analyses(llm_settings, sample_logs):
 
         analysis_data = {
             "analyses": [
-                {"index": 1, "severity": 9, "category": "error", "reasoning": "Database failure"}
+                {"index": 1, "severity": 9, "reasoning": "Database failure"}
                 # Missing analyses for logs 2 and 3
             ]
         }

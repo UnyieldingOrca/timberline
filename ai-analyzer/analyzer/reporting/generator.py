@@ -65,7 +65,6 @@ class ReportGenerator:
                 "top_issues": [
                     {
                         "severity": issue.severity,
-                        "category": issue.category,
                         "reasoning": issue.reasoning,
                         "message": self._truncate_message(issue.log.message, 200),
                         "source": issue.log.source,
