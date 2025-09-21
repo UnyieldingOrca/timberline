@@ -97,12 +97,12 @@ func NewStreamHandler(storage storage.StorageInterface, maxBatchSize int) *Strea
 	}
 
 	// Register metrics, ignoring duplicate registration errors for tests
-	prometheus.DefaultRegisterer.Register(metrics.requestsTotal)
-	prometheus.DefaultRegisterer.Register(metrics.requestDuration)
-	prometheus.DefaultRegisterer.Register(metrics.linesProcessed)
-	prometheus.DefaultRegisterer.Register(metrics.batchesCreated)
-	prometheus.DefaultRegisterer.Register(metrics.errorsTotal)
-	prometheus.DefaultRegisterer.Register(metrics.invalidLines)
+	_ = prometheus.DefaultRegisterer.Register(metrics.requestsTotal)
+	_ = prometheus.DefaultRegisterer.Register(metrics.requestDuration)
+	_ = prometheus.DefaultRegisterer.Register(metrics.linesProcessed)
+	_ = prometheus.DefaultRegisterer.Register(metrics.batchesCreated)
+	_ = prometheus.DefaultRegisterer.Register(metrics.errorsTotal)
+	_ = prometheus.DefaultRegisterer.Register(metrics.invalidLines)
 
 	return &StreamHandler{
 		storage:      storage,
@@ -154,7 +154,7 @@ func (h *StreamHandler) HandleStream(w http.ResponseWriter, r *http.Request) {
 
 func (h *StreamHandler) processStream(r *http.Request) (int, error) {
 	scanner := bufio.NewScanner(r.Body)
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	var batch []*models.LogEntry
 	totalProcessed := 0
