@@ -47,6 +47,69 @@ func TestNewMilvusClient(t *testing.T) {
 	assert.False(t, client.connected)
 }
 
+func TestMilvusClient_Validate(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupClient func() *MilvusClient
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "Valid configuration",
+			setupClient: func() *MilvusClient {
+				return NewMilvusClient("localhost:19530", &MockEmbeddingService{}, 768, 0.95)
+			},
+			expectError: false,
+		},
+		{
+			name: "Nil embedding service",
+			setupClient: func() *MilvusClient {
+				return NewMilvusClient("localhost:19530", nil, 768, 0.95)
+			},
+			expectError: true,
+			errorMsg:    "embedding service cannot be nil",
+		},
+		{
+			name: "Invalid embedding dimension",
+			setupClient: func() *MilvusClient {
+				return NewMilvusClient("localhost:19530", &MockEmbeddingService{}, 0, 0.95)
+			},
+			expectError: true,
+			errorMsg:    "embedding dimension must be positive",
+		},
+		{
+			name: "Invalid similarity threshold - negative",
+			setupClient: func() *MilvusClient {
+				return NewMilvusClient("localhost:19530", &MockEmbeddingService{}, 768, -0.1)
+			},
+			expectError: true,
+			errorMsg:    "similarity threshold must be between 0 and 1",
+		},
+		{
+			name: "Invalid similarity threshold - too high",
+			setupClient: func() *MilvusClient {
+				return NewMilvusClient("localhost:19530", &MockEmbeddingService{}, 768, 1.5)
+			},
+			expectError: true,
+			errorMsg:    "similarity threshold must be between 0 and 1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := tt.setupClient()
+			err := client.Validate()
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorMsg)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestMilvusClient_StoreBatch_ValidationErrors(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
 	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95)

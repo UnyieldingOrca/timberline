@@ -62,7 +62,33 @@ func NewMilvusClient(address string, embeddingService embedding.Interface, embed
 	}
 }
 
+// Validate checks the client configuration for common issues
+func (m *MilvusClient) Validate() error {
+	if m.embeddingService == nil {
+		return fmt.Errorf("embedding service cannot be nil")
+	}
+	
+	if m.embeddingDim <= 0 {
+		return fmt.Errorf("embedding dimension must be positive, got %d", m.embeddingDim)
+	}
+	
+	if m.similarityThreshold < 0 || m.similarityThreshold > 1 {
+		return fmt.Errorf("similarity threshold must be between 0 and 1, got %f", m.similarityThreshold)
+	}
+	
+	if m.collection == "" {
+		return fmt.Errorf("collection name cannot be empty")
+	}
+	
+	return nil
+}
+
 func (m *MilvusClient) Connect(ctx context.Context) error {
+	// Validate configuration before attempting connection
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("invalid client configuration: %w", err)
+	}
+
 	m.logger.WithField("address", m.address).Info("Connecting to Milvus")
 
 	// Use the provided address, with fallback to default
