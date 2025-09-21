@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -65,36 +64,6 @@ func newTestStreamHandler(storage storage.StorageInterface, maxBatchSize int) *S
 		metrics:      metrics,
 		maxBatchSize: maxBatchSize,
 	}
-}
-
-// MockStorageInterface for testing
-type MockStreamStorage struct {
-	mock.Mock
-}
-
-func (m *MockStreamStorage) StoreBatch(ctx context.Context, batch *models.LogBatch) error {
-	args := m.Called(ctx, batch)
-	return args.Error(0)
-}
-
-func (m *MockStreamStorage) Connect(ctx context.Context) error {
-	args := m.Called(ctx)
-	return args.Error(0)
-}
-
-func (m *MockStreamStorage) Close() error {
-	args := m.Called()
-	return args.Error(0)
-}
-
-func (m *MockStreamStorage) CreateCollection(ctx context.Context) error {
-	args := m.Called(ctx)
-	return args.Error(0)
-}
-
-func (m *MockStreamStorage) HealthCheck(ctx context.Context) error {
-	args := m.Called(ctx)
-	return args.Error(0)
 }
 
 func TestStreamHandler_HandleStream_Success(t *testing.T) {

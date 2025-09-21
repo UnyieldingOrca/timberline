@@ -11,26 +11,6 @@ import (
 	"github.com/timberline/log-ingestor/internal/models"
 )
 
-// MockEmbeddingService is a mock implementation of the embedding service
-type MockEmbeddingService struct {
-	mock.Mock
-}
-
-func (m *MockEmbeddingService) GetEmbeddings(ctx context.Context, texts []string) ([][]float32, error) {
-	args := m.Called(ctx, texts)
-	return args.Get(0).([][]float32), args.Error(1)
-}
-
-func (m *MockEmbeddingService) GetEmbedding(ctx context.Context, text string) ([]float32, error) {
-	args := m.Called(ctx, text)
-	return args.Get(0).([]float32), args.Error(1)
-}
-
-func (m *MockEmbeddingService) HealthCheck(ctx context.Context) error {
-	args := m.Called(ctx)
-	return args.Error(0)
-}
-
 func TestNewMilvusClient(t *testing.T) {
 	address := "localhost:19530"
 	mockEmbedding := &MockEmbeddingService{}
