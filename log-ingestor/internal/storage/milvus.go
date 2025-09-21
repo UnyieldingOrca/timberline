@@ -42,6 +42,12 @@ type MilvusClient struct {
 	similarityThreshold float32
 }
 
+// SearchResult represents a search result with ID and similarity score
+type SearchResult struct {
+	ID    int64   // Log entry ID
+	Score float32 // Similarity score
+}
+
 type StorageInterface interface {
 	Connect(ctx context.Context) error
 	Close() error
@@ -193,7 +199,7 @@ func (m *MilvusClient) createEmbeddingIndex(ctx context.Context) error {
 }
 
 // SearchSimilarLogs searches for logs similar to the given embedding
-func (m *MilvusClient) SearchSimilarLogs(ctx context.Context, embedding []float32, topK int) ([]float32, error) {
+func (m *MilvusClient) SearchSimilarLogs(ctx context.Context, embedding []float32, topK int) ([]SearchResult, error) {
 	if !m.connected {
 		return nil, fmt.Errorf("not connected to Milvus")
 	}
@@ -212,31 +218,123 @@ func (m *MilvusClient) SearchSimilarLogs(ctx context.Context, embedding []float3
 	}
 
 	if len(results) == 0 {
-		return []float32{}, nil
+		return []SearchResult{}, nil
 	}
 
-	// Extract distances/scores
+	// Extract IDs and scores from the first result set
 	result := results[0]
-	scores := make([]float32, len(result.Scores))
-	copy(scores, result.Scores)
 
-	return scores, nil
+	// Get the ID column from results
+	idColumn := result.GetColumn(FieldID)
+	idCol, ok := idColumn.(*column.ColumnInt64)
+	if !ok {
+		return nil, fmt.Errorf("failed to extract ID column from search results")
+	}
+
+	idData := idCol.Data()
+	scores := result.Scores
+	searchResults := make([]SearchResult, len(idData))
+
+	for i := range searchResults {
+		searchResults[i] = SearchResult{
+			ID:    idData[i],
+			Score: scores[i],
+		}
+	}
+
+	return searchResults, nil
 }
 
 // UpdateDuplicateCount increments the duplicate count for a specific log entry
-// For now, this is a placeholder that logs the increment action
-// In a production system, this would require complex Milvus upsert operations
 func (m *MilvusClient) UpdateDuplicateCount(ctx context.Context, logID int64) error {
 	if !m.connected {
 		return fmt.Errorf("not connected to Milvus")
 	}
 
-	// Log the duplicate increment action
-	// TODO: Implement full upsert logic when Milvus client patterns are clearer
+	m.logger.WithField("log_id", logID).Debug("Updating duplicate count for log entry")
+
+	// First, query the current record to get all its fields
+	queryOption := milvusclient.NewQueryOption(m.collection).
+		WithFilter(fmt.Sprintf("%s == %d", FieldID, logID)).
+		WithOutputFields(FieldTimestamp, FieldMessage, FieldSource, FieldMetadata, FieldDuplicateCount, FieldEmbedding)
+
+	queryResult, err := m.client.Query(ctx, queryOption)
+	if err != nil {
+		return fmt.Errorf("failed to query existing log entry: %w", err)
+	}
+
+	if queryResult.ResultCount == 0 {
+		return fmt.Errorf("log entry with ID %d not found", logID)
+	}
+
+	// Extract the current data from the result set
+	result := queryResult
+
+	// Get current duplicate count
+	duplicateCountCol, ok := result.GetColumn(FieldDuplicateCount).(*column.ColumnInt64)
+	if !ok {
+		return fmt.Errorf("failed to extract duplicate count column")
+	}
+	currentCount := duplicateCountCol.Data()[0]
+	newCount := currentCount + 1
+
+	// Get all other fields for upsert
+	timestampCol, ok := result.GetColumn(FieldTimestamp).(*column.ColumnInt64)
+	if !ok {
+		return fmt.Errorf("failed to extract timestamp column")
+	}
+
+	messageCol, ok := result.GetColumn(FieldMessage).(*column.ColumnVarChar)
+	if !ok {
+		return fmt.Errorf("failed to extract message column")
+	}
+
+	sourceCol, ok := result.GetColumn(FieldSource).(*column.ColumnVarChar)
+	if !ok {
+		return fmt.Errorf("failed to extract source column")
+	}
+
+	metadataCol, ok := result.GetColumn(FieldMetadata).(*column.ColumnJSONBytes)
+	if !ok {
+		return fmt.Errorf("failed to extract metadata column")
+	}
+
+	embeddingCol, ok := result.GetColumn(FieldEmbedding).(*column.ColumnFloatVector)
+	if !ok {
+		return fmt.Errorf("failed to extract embedding column")
+	}
+
+	// Convert embedding data to [][]float32
+	embeddingData := embeddingCol.Data()
+	embeddings := make([][]float32, len(embeddingData))
+	for i, vec := range embeddingData {
+		embeddings[i] = []float32(vec)
+	}
+
+	// Create columns for upsert with updated duplicate count
+	upsertColumns := []column.Column{
+		column.NewColumnInt64(FieldID, []int64{logID}),
+		column.NewColumnInt64(FieldTimestamp, timestampCol.Data()),
+		column.NewColumnVarChar(FieldMessage, messageCol.Data()),
+		column.NewColumnVarChar(FieldSource, sourceCol.Data()),
+		column.NewColumnJSONBytes(FieldMetadata, metadataCol.Data()),
+		column.NewColumnInt64(FieldDuplicateCount, []int64{newCount}),
+		column.NewColumnFloatVector(FieldEmbedding, m.embeddingDim, embeddings),
+	}
+
+	// Perform insert operation with explicit ID (Milvus will update if ID exists)
+	insertOption := milvusclient.NewColumnBasedInsertOption(m.collection).WithColumns(upsertColumns...)
+	insertResult, err := m.client.Insert(ctx, insertOption)
+	if err != nil {
+		return fmt.Errorf("failed to update log entry: %w", err)
+	}
+
 	m.logger.WithFields(logrus.Fields{
-		"log_id": logID,
-		"action": "duplicate_increment",
-	}).Info("Duplicate log detected, would increment count in production")
+		"log_id":       logID,
+		"old_count":    currentCount,
+		"new_count":    newCount,
+		"insert_count": insertResult.InsertCount,
+	}).Info("Successfully updated duplicate count")
 
 	return nil
 }
@@ -267,23 +365,28 @@ func (m *MilvusClient) StoreLog(ctx context.Context, log *models.LogEntry) error
 
 	// Check for similar logs if similarity threshold is enabled (> 0)
 	if m.similarityThreshold > 0 {
-		distances, err := m.SearchSimilarLogs(ctx, emb, 1)
+		searchResults, err := m.SearchSimilarLogs(ctx, emb, 1)
 		if err != nil {
 			m.logger.WithError(err).Warn("Failed to search for similar logs, proceeding with insertion")
-		} else if len(distances) > 0 && distances[0] > m.similarityThreshold {
+		} else if len(searchResults) > 0 && searchResults[0].Score > m.similarityThreshold {
 			// Found a similar log, count it as duplicate
+			similarLog := searchResults[0]
 			m.logger.WithFields(logrus.Fields{
 				"message":    log.Message,
-				"similarity": distances[0],
+				"similarity": similarLog.Score,
 				"threshold":  m.similarityThreshold,
+				"similar_id": similarLog.ID,
 			}).Debug("Detected duplicate log")
 
 			// Update duplicate count for existing log
-			if updateErr := m.UpdateDuplicateCount(ctx, 0); updateErr != nil {
+			if updateErr := m.UpdateDuplicateCount(ctx, similarLog.ID); updateErr != nil {
 				m.logger.WithError(updateErr).Warn("Failed to update duplicate count")
 			}
 
-			m.logger.WithField("message", log.Message).Info("Log is duplicate, count updated")
+			m.logger.WithFields(logrus.Fields{
+				"message":    log.Message,
+				"similar_id": similarLog.ID,
+			}).Info("Log is duplicate, count updated")
 			return nil
 		}
 	}

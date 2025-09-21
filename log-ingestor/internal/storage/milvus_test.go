@@ -234,6 +234,33 @@ func TestLogEntry_MetadataAsJSON(t *testing.T) {
 	}
 }
 
+func TestMilvusClient_DuplicateCountingWorkflow(t *testing.T) {
+	mockEmbedding := &MockEmbeddingService{}
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.0) // Disable similarity threshold for this test
+
+	log := &models.LogEntry{
+		Timestamp: time.Now().UnixMilli(),
+		Message:   "test message",
+		Source:    "test",
+		Metadata:  map[string]interface{}{"level": "INFO"},
+	}
+
+	// Test should fail because client is not connected
+	err := client.StoreLog(context.Background(), log)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not connected to Milvus")
+}
+
+func TestSearchResult_Structure(t *testing.T) {
+	result := SearchResult{
+		ID:    12345,
+		Score: 0.95,
+	}
+
+	assert.Equal(t, int64(12345), result.ID)
+	assert.Equal(t, float32(0.95), result.Score)
+}
+
 func TestStorageInterface_Implementation(t *testing.T) {
 	// Ensure MilvusClient implements StorageInterface
 	var _ StorageInterface = (*MilvusClient)(nil)
