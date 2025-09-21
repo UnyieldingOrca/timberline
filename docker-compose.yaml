@@ -173,12 +173,6 @@ services:
     volumes:
       - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/fluent-bit-config:/fluent-bit/etc:ro
       - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/test-logs:/test-logs:ro
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:2020/api/v1/health"]
-      interval: 10s
-      start_period: 5s
-      timeout: 5s
-      retries: 3
     depends_on:
       log-ingestor:
         condition: service_healthy
