@@ -22,10 +22,10 @@ spec:
         - sh
         - -c
         - |
-          if [ ! -f /models/phi-3-mini-4k-instruct.Q4_K_M.gguf ]; then
+          if [ ! -f /models/Qwen3-0.6B-Q4_K_M.gguf ]; then
             echo "Downloading chat model..."
-            wget -O /models/phi-3-mini-4k-instruct.Q4_K_M.gguf \
-              https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf
+            wget -O /models/Qwen3-0.6B-Q4_K_M.gguf \
+              https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf
           else
             echo "Model already exists"
           fi
@@ -39,7 +39,7 @@ spec:
         - /app/llama-server
         args:
         - -m
-        - /models/phi-3-mini-4k-instruct.Q4_K_M.gguf
+        - /models/Qwen3-0.6B-Q4_K_M.gguf
         - --host
         - "0.0.0.0"
         - --port

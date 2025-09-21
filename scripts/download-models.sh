@@ -6,9 +6,9 @@
 
 set -e
 
-MODELS_DIR="./models-cache"
+MODELS_DIR="./volumes/llama-models"
 EMBEDDING_MODEL="nomic-embed-text-v1.5.f16.gguf"
-CHAT_MODEL="phi-3-mini-4k-instruct.Q4_K_M.gguf"
+CHAT_MODEL="Qwen3-0.6B-Q4_K_M.gguf"
 
 # Create models directory if it doesn't exist
 mkdir -p "$MODELS_DIR"
@@ -46,15 +46,15 @@ download_model "$EMBEDDING_MODEL" \
     "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.f16.gguf"
 
 echo ""
-echo "🧠 Downloading Chat Model (Phi-3 Mini)..."
+echo "🧠 Downloading Chat Model (Qwen3 0.6B)..."
 download_model "$CHAT_MODEL" \
-    "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf"
+    "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf"
 
 echo ""
 echo "🎉 All models downloaded successfully!"
 echo ""
 echo "📊 Model Information:"
 echo "   Embedding Model: $EMBEDDING_MODEL (~274MB) - Used for log vectorization"
-echo "   Chat Model: $CHAT_MODEL (~2.4GB) - Used for AI analysis and reasoning"
+echo "   Chat Model: $CHAT_MODEL (~370MB) - Used for AI analysis and reasoning"
 echo ""
 echo "💡 You can now start the services with: make kind-setup"

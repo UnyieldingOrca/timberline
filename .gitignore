@@ -4,8 +4,7 @@ __pycache__/
 *$py.class
 .idea
 .claude
-/models-cache
-/test-logs
+/volumes
 
 # C extensions
 *.so
