@@ -238,12 +238,11 @@ func (h *StreamHandler) storeBatch(ctx context.Context, entries []*models.LogEnt
 		return nil
 	}
 
-	batch := &models.LogBatch{
-		Logs: entries,
-	}
-
-	if err := h.storage.StoreBatch(ctx, batch); err != nil {
-		return err
+	// Store each log entry individually
+	for _, entry := range entries {
+		if err := h.storage.StoreLog(ctx, entry); err != nil {
+			return err
+		}
 	}
 
 	h.metrics.batchesCreated.Inc()

@@ -21,10 +21,8 @@ func TestStreamHandler_FluentBitRealData(t *testing.T) {
 	fluentBitData := `{"date":1758402234.132,"log":"2025-09-20T21:03:54.132201507Z stderr F time=\"2025-09-20T21:03:54Z\" level=warning msg=\"Invalid log entry\"","kubernetes":{"pod_name":"log-ingestor-68b874f5df-p448n","namespace_name":"timberline","pod_id":"4e1ed8d6-e55f-4e8c-8af9-a92c9bbb4006","labels":{"app":"log-ingestor","pod-template-hash":"68b874f5df"},"host":"timberline-test-worker","pod_ip":"10.244.1.13","container_name":"log-ingestor","docker_id":"9edc32d6f0098c36c371dc23c7e2cc9ff8994f9fbd89b6a9a883fa119cc1f20e","container_hash":"sha256:784156a830ef6d365fa46f9a025f8f7581713d57130623d6b6b21a94bac4a8de","container_image":"docker.io/timberline/log-ingestor:latest"},"source":"fluent-bit"}
 {"date":1758402235.456,"log":"2025-09-20T21:03:55.456789012Z stdout F {\"level\":\"info\",\"msg\":\"Processing request\",\"service\":\"log-ingestor\"}","kubernetes":{"pod_name":"log-ingestor-68b874f5df-p448n","namespace_name":"timberline","container_name":"log-ingestor"},"source":"fluent-bit"}`
 
-	// Mock storage expects one batch call with 2 transformed entries
-	mockStorage.On("StoreBatch", mock.Anything, mock.MatchedBy(func(batch *models.LogBatch) bool {
-		return len(batch.Logs) == 2
-	})).Return(nil)
+	// Mock storage expects two individual log calls with transformed entries
+	mockStorage.On("StoreLog", mock.Anything, mock.AnythingOfType("*models.LogEntry")).Return(nil).Times(2)
 
 	// Create request
 	req := httptest.NewRequest("POST", "/api/v1/logs/stream", bytes.NewBufferString(fluentBitData))
@@ -58,10 +56,8 @@ func TestStreamHandler_ExpectedFormat(t *testing.T) {
 	expectedData := `{"timestamp":1758402234132,"message":"2025-09-20T21:03:54.132201507Z stderr F time=\"2025-09-20T21:03:54Z\" level=warning msg=\"Invalid log entry\"","source":"fluent-bit","metadata":{"level":"warning","container_name":"log-ingestor","namespace":"timberline","pod_name":"log-ingestor-68b874f5df-p448n","labels":{"app":"log-ingestor"}}}
 {"timestamp":1758402235456,"message":"{\"level\":\"info\",\"msg\":\"Processing request\",\"service\":\"log-ingestor\"}","source":"fluent-bit","metadata":{"level":"info","container_name":"log-ingestor","namespace":"timberline","pod_name":"log-ingestor-68b874f5df-p448n"}}`
 
-	// Mock storage expects one batch call with 2 entries
-	mockStorage.On("StoreBatch", mock.Anything, mock.MatchedBy(func(batch *models.LogBatch) bool {
-		return len(batch.Logs) == 2
-	})).Return(nil)
+	// Mock storage expects two individual log calls
+	mockStorage.On("StoreLog", mock.Anything, mock.AnythingOfType("*models.LogEntry")).Return(nil).Times(2)
 
 	// Create request
 	req := httptest.NewRequest("POST", "/api/v1/logs/stream", bytes.NewBufferString(expectedData))

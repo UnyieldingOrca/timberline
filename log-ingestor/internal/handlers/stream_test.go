@@ -72,8 +72,8 @@ type MockStreamStorage struct {
 	mock.Mock
 }
 
-func (m *MockStreamStorage) StoreBatch(ctx context.Context, batch *models.LogBatch) error {
-	args := m.Called(ctx, batch)
+func (m *MockStreamStorage) StoreLog(ctx context.Context, log *models.LogEntry) error {
+	args := m.Called(ctx, log)
 	return args.Error(0)
 }
 
@@ -125,10 +125,10 @@ func TestStreamHandler_HandleStream_Success(t *testing.T) {
 
 	requestBody := strings.Join(jsonLines, "\n")
 
-	// Mock storage expects one batch call
-	mockStorage.On("StoreBatch", mock.Anything, mock.MatchedBy(func(batch *models.LogBatch) bool {
-		return len(batch.Logs) == 2
-	})).Return(nil)
+	// Mock storage expects two individual log calls
+	mockStorage.On("StoreLog", mock.Anything, mock.MatchedBy(func(log *models.LogEntry) bool {
+		return log.Message == "Test log message 1" || log.Message == "Test log message 2"
+	})).Return(nil).Times(2)
 
 	// Create request
 	req := httptest.NewRequest("POST", "/api/v1/logs/stream", strings.NewReader(requestBody))
@@ -182,10 +182,10 @@ func TestStreamHandler_HandleStream_InvalidJSON(t *testing.T) {
 invalid json line
 {"timestamp": %d, "message": "another valid", "source": "test"}`, now, now+1000)
 
-	// Mock storage expects one batch call with only valid entries
-	mockStorage.On("StoreBatch", mock.Anything, mock.MatchedBy(func(batch *models.LogBatch) bool {
-		return len(batch.Logs) == 2 // Only valid entries
-	})).Return(nil)
+	// Mock storage expects two individual log calls with only valid entries
+	mockStorage.On("StoreLog", mock.Anything, mock.MatchedBy(func(log *models.LogEntry) bool {
+		return log.Message == "valid" || log.Message == "another valid"
+	})).Return(nil).Times(2)
 
 	req := httptest.NewRequest("POST", "/api/v1/logs/stream", strings.NewReader(requestBody))
 	req.Header.Set("Content-Type", "application/x-ndjson")
@@ -246,14 +246,8 @@ func TestStreamHandler_HandleStream_BatchSizeLimiting(t *testing.T) {
 
 	requestBody := strings.Join(jsonLines, "\n")
 
-	// Expect 3 batch calls
-	mockStorage.On("StoreBatch", mock.Anything, mock.MatchedBy(func(batch *models.LogBatch) bool {
-		return len(batch.Logs) == 2
-	})).Return(nil).Twice()
-
-	mockStorage.On("StoreBatch", mock.Anything, mock.MatchedBy(func(batch *models.LogBatch) bool {
-		return len(batch.Logs) == 1
-	})).Return(nil).Once()
+	// Expect 5 individual log calls (all entries processed individually)
+	mockStorage.On("StoreLog", mock.Anything, mock.AnythingOfType("*models.LogEntry")).Return(nil).Times(5)
 
 	req := httptest.NewRequest("POST", "/api/v1/logs/stream", strings.NewReader(requestBody))
 	req.Header.Set("Content-Type", "application/x-ndjson")
@@ -285,7 +279,7 @@ func TestStreamHandler_HandleStream_StorageError(t *testing.T) {
 	line, _ := json.Marshal(entry)
 
 	// Mock storage returns error
-	mockStorage.On("StoreBatch", mock.Anything, mock.Anything).Return(assert.AnError)
+	mockStorage.On("StoreLog", mock.Anything, mock.Anything).Return(assert.AnError)
 
 	req := httptest.NewRequest("POST", "/api/v1/logs/stream", strings.NewReader(string(line)))
 	req.Header.Set("Content-Type", "application/x-ndjson")

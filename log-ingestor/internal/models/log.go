@@ -9,10 +9,11 @@ import (
 // LogEntry represents a generic log entry with minimal required fields
 // and flexible metadata for different log sources
 type LogEntry struct {
-	Timestamp int64                  `json:"timestamp"`          // Unix timestamp in milliseconds
-	Message   string                 `json:"message"`            // The actual log message
-	Source    string                 `json:"source"`             // Source identifier (service, application, etc.)
-	Metadata  map[string]interface{} `json:"metadata,omitempty"` // Generic metadata for additional context
+	Timestamp      int64                  `json:"timestamp"`          // Unix timestamp in milliseconds
+	Message        string                 `json:"message"`            // The actual log message
+	Source         string                 `json:"source"`             // Source identifier (service, application, etc.)
+	Metadata       map[string]interface{} `json:"metadata,omitempty"` // Generic metadata for additional context
+	DuplicateCount int64                  `json:"duplicate_count"`    // Number of duplicate occurrences of this log
 }
 
 type LogBatch struct {

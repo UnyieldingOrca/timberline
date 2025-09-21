@@ -46,128 +46,85 @@ func TestNewMilvusClient(t *testing.T) {
 	assert.False(t, client.connected)
 }
 
-func TestMilvusClient_StoreBatch_ValidationErrors(t *testing.T) {
+func TestMilvusClient_StoreLog_ValidationErrors(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
 	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95)
 	ctx := context.Background()
 
 	tests := []struct {
 		name        string
-		batch       *models.LogBatch
+		log         *models.LogEntry
 		expectError string
 	}{
 		{
-			name:        "nil batch",
-			batch:       nil,
-			expectError: "batch cannot be nil",
-		},
-		{
-			name: "empty batch",
-			batch: &models.LogBatch{
-				Logs: []*models.LogEntry{},
-			},
-			expectError: "batch validation failed",
+			name:        "nil log",
+			log:         nil,
+			expectError: "log cannot be nil",
 		},
 		{
 			name: "invalid log entry - missing message",
-			batch: &models.LogBatch{
-				Logs: []*models.LogEntry{
-					{
-						Timestamp: time.Now().UnixMilli(),
-						Source:    "test",
-						// Missing message
-					},
-				},
+			log: &models.LogEntry{
+				Timestamp: time.Now().UnixMilli(),
+				Source:    "test",
+				// Missing message
 			},
-			expectError: "batch validation failed",
+			expectError: "log validation failed",
+		},
+		{
+			name: "invalid log entry - missing source",
+			log: &models.LogEntry{
+				Timestamp: time.Now().UnixMilli(),
+				Message:   "test message",
+				// Missing source
+			},
+			expectError: "log validation failed",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := client.StoreBatch(ctx, tt.batch)
+			err := client.StoreLog(ctx, tt.log)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), tt.expectError)
 		})
 	}
 }
 
-func TestMilvusClient_StoreBatch_NotConnected(t *testing.T) {
+func TestMilvusClient_StoreLog_NotConnected(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
 	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95)
 
-	batch := &models.LogBatch{
-		Logs: []*models.LogEntry{
-			{
-				Timestamp: time.Now().UnixMilli(),
-				Message:   "test message",
-				Source:    "test",
-				Metadata:  map[string]interface{}{"level": "INFO"},
-			},
-		},
+	log := &models.LogEntry{
+		Timestamp: time.Now().UnixMilli(),
+		Message:   "test message",
+		Source:    "test",
+		Metadata:  map[string]interface{}{"level": "INFO"},
 	}
 
-	err := client.StoreBatch(context.Background(), batch)
+	err := client.StoreLog(context.Background(), log)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not connected to Milvus")
 }
 
-func TestMilvusClient_StoreBatch_EmbeddingFailure(t *testing.T) {
+func TestMilvusClient_StoreLog_EmbeddingFailure(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
 	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95)
 	client.connected = true // Simulate connection
 
-	batch := &models.LogBatch{
-		Logs: []*models.LogEntry{
-			{
-				Timestamp: time.Now().UnixMilli(),
-				Message:   "test message",
-				Source:    "test",
-				Metadata:  map[string]interface{}{"level": "INFO"},
-			},
-		},
+	log := &models.LogEntry{
+		Timestamp: time.Now().UnixMilli(),
+		Message:   "test message",
+		Source:    "test",
+		Metadata:  map[string]interface{}{"level": "INFO"},
 	}
 
 	// Mock embedding service failure
-	mockEmbedding.On("GetEmbeddings", mock.Anything, []string{"test message"}).
-		Return([][]float32{}, assert.AnError)
+	mockEmbedding.On("GetEmbedding", mock.Anything, "test message").
+		Return([]float32{}, assert.AnError)
 
-	err := client.StoreBatch(context.Background(), batch)
+	err := client.StoreLog(context.Background(), log)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get embeddings")
-
-	mockEmbedding.AssertExpectations(t)
-}
-
-func TestMilvusClient_StoreBatch_EmbeddingCountMismatch(t *testing.T) {
-	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95)
-	client.connected = true // Simulate connection
-
-	batch := &models.LogBatch{
-		Logs: []*models.LogEntry{
-			{
-				Timestamp: time.Now().UnixMilli(),
-				Message:   "test message 1",
-				Source:    "test",
-				Metadata:  map[string]interface{}{"level": "INFO"},
-			},
-			{
-				Timestamp: time.Now().UnixMilli(),
-				Message:   "test message 2",
-				Source:    "test",
-				Metadata:  map[string]interface{}{"level": "ERROR"},
-			},
-		},
-	}
-
-	// Mock embedding service returning wrong number of embeddings
-	mockEmbedding.On("GetEmbeddings", mock.Anything, []string{"test message 1", "test message 2"}).
-		Return([][]float32{{0.1, 0.2, 0.3}}, nil) // Only 1 embedding for 2 messages
-
-	err := client.StoreBatch(context.Background(), batch)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "embedding count mismatch")
+	assert.Contains(t, err.Error(), "failed to get embedding")
 
 	mockEmbedding.AssertExpectations(t)
 }

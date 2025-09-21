@@ -17,7 +17,7 @@ type mockStorage struct {
 	healthCheckError bool
 }
 
-func (m *mockStorage) StoreBatch(ctx context.Context, batch *models.LogBatch) error {
+func (m *mockStorage) StoreLog(ctx context.Context, log *models.LogEntry) error {
 	if m.healthCheckError {
 		return errors.New("storage error")
 	}
