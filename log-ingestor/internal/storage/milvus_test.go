@@ -40,6 +40,7 @@ func TestNewMilvusClient(t *testing.T) {
 
 	assert.NotNil(t, client)
 	assert.Equal(t, "timberline_logs", client.collection)
+	assert.Equal(t, address, client.address)
 	assert.Equal(t, dimension, client.embeddingDim)
 	assert.Equal(t, mockEmbedding, client.embeddingService)
 	assert.NotNil(t, client.logger)

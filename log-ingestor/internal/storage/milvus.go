@@ -11,6 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/timberline/log-ingestor/internal/embedding"
 	"github.com/timberline/log-ingestor/internal/models"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -33,6 +34,7 @@ const (
 type MilvusClient struct {
 	client              client.Client
 	collection          string
+	address             string
 	embeddingDim        int
 	embeddingService    embedding.Interface
 	logger              *logrus.Logger
@@ -56,25 +58,43 @@ func NewMilvusClient(address string, embeddingService embedding.Interface, embed
 		logger:              logrus.New(),
 		connected:           false,
 		similarityThreshold: similarityThreshold,
+		address:             address, // Store the address for connection
 	}
 }
 
 func (m *MilvusClient) Connect(ctx context.Context) error {
-	m.logger.Info("Connecting to Milvus")
+	m.logger.WithField("address", m.address).Info("Connecting to Milvus")
 
-	cfg := &client.Config{
-		Address: "milvus:19530", // Default Milvus address
+	// Use the provided address, with fallback to default
+	address := m.address
+	if address == "" {
+		address = "milvus:19530" // Default Milvus address
 	}
 
-	c, err := client.NewClient(ctx, *cfg)
+	cfg := client.Config{
+		Address: address,
+		// Add connection options for improved reliability
+		DialOptions: []grpc.DialOption{
+			grpc.WithTimeout(30 * time.Second),
+			grpc.WithBlock(),
+		},
+		// Add retry configuration for rate limiting
+		RetryRateLimit: &client.RetryRateLimitOption{
+			MaxRetry:   3,
+			MaxBackoff: 60 * time.Second,
+		},
+	}
+
+	c, err := client.NewClient(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("failed to create Milvus client: %w", err)
+		m.logger.WithError(err).WithField("address", address).Error("Failed to create Milvus client")
+		return fmt.Errorf("failed to create Milvus client for address %s: %w", address, err)
 	}
 
 	m.client = c
 	m.connected = true
 
-	m.logger.Info("Successfully connected to Milvus")
+	m.logger.WithField("address", address).Info("Successfully connected to Milvus")
 	return nil
 }
 
@@ -83,13 +103,20 @@ func (m *MilvusClient) Close() error {
 	if m.client != nil {
 		err := m.client.Close()
 		m.connected = false
-		return err
+		if err != nil {
+			m.logger.WithError(err).Error("Error closing Milvus connection")
+			return fmt.Errorf("failed to close Milvus connection: %w", err)
+		}
+		m.logger.Info("Milvus connection closed successfully")
 	}
 	return nil
 }
 
 func (m *MilvusClient) CreateCollection(ctx context.Context) error {
-	m.logger.WithField("collection", m.collection).Info("Creating Milvus collection")
+	m.logger.WithFields(logrus.Fields{
+		"collection":    m.collection,
+		"embeddingDim": m.embeddingDim,
+	}).Info("Creating Milvus collection")
 
 	if !m.connected {
 		return fmt.Errorf("not connected to Milvus")
@@ -98,6 +125,7 @@ func (m *MilvusClient) CreateCollection(ctx context.Context) error {
 	// Check if collection already exists
 	hasCollection, err := m.client.HasCollection(ctx, m.collection)
 	if err != nil {
+		m.logger.WithError(err).WithField("collection", m.collection).Error("Failed to check collection existence")
 		return fmt.Errorf("failed to check collection existence: %w", err)
 	}
 
@@ -337,7 +365,10 @@ func (m *MilvusClient) StoreBatch(ctx context.Context, batch *models.LogBatch) e
 }
 
 func (m *MilvusClient) HealthCheck(ctx context.Context) error {
-	m.logger.Debug("Performing Milvus health check")
+	m.logger.WithFields(logrus.Fields{
+		"collection": m.collection,
+		"address":    m.address,
+	}).Debug("Performing Milvus health check")
 
 	if !m.connected {
 		return fmt.Errorf("not connected to Milvus")
@@ -346,6 +377,7 @@ func (m *MilvusClient) HealthCheck(ctx context.Context) error {
 	// Check if client is connected and responsive
 	version, err := m.client.GetVersion(ctx)
 	if err != nil {
+		m.logger.WithError(err).Error("Failed to get Milvus version during health check")
 		return fmt.Errorf("failed to get Milvus version: %w", err)
 	}
 
@@ -354,11 +386,14 @@ func (m *MilvusClient) HealthCheck(ctx context.Context) error {
 	// Check if collection exists and is accessible
 	hasCollection, err := m.client.HasCollection(ctx, m.collection)
 	if err != nil {
+		m.logger.WithError(err).WithField("collection", m.collection).Error("Failed to check collection existence during health check")
 		return fmt.Errorf("failed to check collection: %w", err)
 	}
 
 	if !hasCollection {
 		m.logger.WithField("collection", m.collection).Warn("Collection does not exist")
+	} else {
+		m.logger.WithField("collection", m.collection).Debug("Collection exists and is accessible")
 	}
 
 	return nil
