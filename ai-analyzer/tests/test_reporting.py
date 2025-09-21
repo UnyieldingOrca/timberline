@@ -11,7 +11,7 @@ from unittest.mock import patch, mock_open
 from analyzer.reporting.generator import ReportGenerator, ReportGeneratorError
 from analyzer.config.settings import Settings
 from analyzer.models.log import (
-    DailyAnalysisResult, LogRecord, LogCluster, AnalyzedLog
+    DailyAnalysisResult, LogRecord, LogCluster, AnalyzedLog, SeverityLevel
 )
 
 
@@ -78,9 +78,9 @@ def sample_clusters(sample_logs):
         )
     ]
 
-    # Add severity scores
+    # Add severity levels
     for i, cluster in enumerate(clusters):
-        cluster.severity_score = [5, 8, 10][i]
+        cluster.severity = [SeverityLevel.MEDIUM, SeverityLevel.HIGH, SeverityLevel.CRITICAL][i]
 
     return clusters
 
@@ -91,17 +91,17 @@ def sample_analyzed_logs(sample_logs):
     return [
         AnalyzedLog(
             log=sample_logs[2],  # ERROR level
-            severity=8,
+            severity=SeverityLevel.HIGH,
             reasoning="Database connection failure detected"
         ),
         AnalyzedLog(
             log=sample_logs[4],  # CRITICAL level
-            severity=10,
+            severity=SeverityLevel.CRITICAL,
             reasoning="Critical system failure"
         ),
         AnalyzedLog(
             log=sample_logs[1],  # WARNING level
-            severity=5,
+            severity=SeverityLevel.MEDIUM,
             reasoning="Performance degradation warning"
         )
     ]

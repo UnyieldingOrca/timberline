@@ -9,7 +9,7 @@ import time
 from analyzer.analysis.engine import AnalysisEngine, AnalysisEngineError
 from analyzer.config.settings import Settings
 from analyzer.models.log import (
-    LogRecord, LogCluster, AnalyzedLog, DailyAnalysisResult
+    LogRecord, LogCluster, AnalyzedLog, DailyAnalysisResult, SeverityLevel
 )
 from analyzer.storage.milvus_client import MilvusConnectionError
 from analyzer.reporting.generator import ReportGeneratorError
@@ -86,9 +86,9 @@ def sample_clusters(sample_logs):
         )
     ]
 
-    # Add severity scores
+    # Add severity levels
     for i, cluster in enumerate(clusters):
-        cluster.severity_score = [8, 10, 5][i]
+        cluster.severity = [SeverityLevel.HIGH, SeverityLevel.CRITICAL, SeverityLevel.MEDIUM][i]
 
     return clusters
 
@@ -176,10 +176,10 @@ def test_analyze_daily_logs_success(settings, mock_components, sample_logs, samp
     # Configure mock responses
     mock_components['milvus'].query_time_range.return_value = sample_logs
     mock_components['milvus'].cluster_similar_logs.return_value = sample_clusters
-    mock_components['llm'].rank_severity.return_value = [8, 10, 5]
+    mock_components['llm'].rank_severity.return_value = [SeverityLevel.HIGH, SeverityLevel.CRITICAL, SeverityLevel.MEDIUM]
     mock_components['llm'].analyze_log_batch.return_value = [
-        AnalyzedLog(log=sample_logs[2], severity=8, reasoning="Database error"),
-        AnalyzedLog(log=sample_logs[4], severity=10, reasoning="Critical failure")
+        AnalyzedLog(log=sample_logs[2], severity=SeverityLevel.HIGH, reasoning="Database error"),
+        AnalyzedLog(log=sample_logs[4], severity=SeverityLevel.CRITICAL, reasoning="Critical failure")
     ]
     mock_components['llm'].generate_daily_summary.return_value = "System has some issues"
     mock_components['reporter'].generate_and_save_report.return_value = "/tmp/report.json"
@@ -255,7 +255,7 @@ def test_analyze_daily_logs_report_generation_failure(settings, mock_components,
     # Configure successful analysis but failed reporting
     mock_components['milvus'].query_time_range.return_value = sample_logs
     mock_components['milvus'].cluster_similar_logs.return_value = sample_clusters
-    mock_components['llm'].rank_severity.return_value = [8, 10, 5]
+    mock_components['llm'].rank_severity.return_value = [SeverityLevel.HIGH, SeverityLevel.CRITICAL, SeverityLevel.MEDIUM]
     mock_components['llm'].generate_daily_summary.return_value = "System summary"
     mock_components['reporter'].generate_and_save_report.side_effect = ReportGeneratorError("Report failed")
 
@@ -316,19 +316,19 @@ def test_process_log_clusters_success(settings, mock_components, sample_clusters
     """Test successful log cluster processing"""
     engine = AnalysisEngine(settings)
 
-    mock_components['llm'].rank_severity.return_value = [8, 10, 5]
+    mock_components['llm'].rank_severity.return_value = [SeverityLevel.HIGH, SeverityLevel.CRITICAL, SeverityLevel.MEDIUM]
     mock_components['llm'].analyze_log_batch.return_value = [
-        AnalyzedLog(log=sample_clusters[0].representative_log, severity=8, reasoning="Error"),
-        AnalyzedLog(log=sample_clusters[1].representative_log, severity=10, reasoning="Critical")
+        AnalyzedLog(log=sample_clusters[0].representative_log, severity=SeverityLevel.HIGH, reasoning="Error"),
+        AnalyzedLog(log=sample_clusters[1].representative_log, severity=SeverityLevel.CRITICAL, reasoning="Critical")
     ]
 
     result_clusters = engine.process_log_clusters(sample_clusters)
 
     assert len(result_clusters) == 3
-    assert all(hasattr(cluster, 'severity_score') for cluster in result_clusters)
-    assert result_clusters[0].severity_score == 8
-    assert result_clusters[1].severity_score == 10
-    assert result_clusters[2].severity_score == 5
+    assert all(cluster.severity is not None for cluster in result_clusters)
+    assert result_clusters[0].severity == SeverityLevel.HIGH
+    assert result_clusters[1].severity == SeverityLevel.CRITICAL
+    assert result_clusters[2].severity == SeverityLevel.MEDIUM
 
 def test_process_log_clusters_empty_input(settings, mock_components):
     """Test cluster processing with empty input"""
@@ -393,17 +393,17 @@ def test_get_top_issues_with_clusters(settings, mock_components, sample_clusters
     """Test getting top issues from clusters"""
     engine = AnalysisEngine(settings)
 
-    # Set severity scores
-    sample_clusters[0].severity_score = 8
-    sample_clusters[1].severity_score = 10
-    sample_clusters[2].severity_score = 4  # Below threshold
+    # Set severity levels
+    sample_clusters[0].severity = SeverityLevel.HIGH
+    sample_clusters[1].severity = SeverityLevel.CRITICAL
+    sample_clusters[2].severity = SeverityLevel.LOW  # Below actionable threshold
 
     top_issues = engine.get_top_issues(sample_clusters)
 
-    assert len(top_issues) == 2  # Only issues with severity >= 5
+    assert len(top_issues) == 2  # Only actionable issues
     assert all(isinstance(issue, AnalyzedLog) for issue in top_issues)
-    assert top_issues[0].severity == 10  # Highest severity first
-    assert top_issues[1].severity == 8
+    assert top_issues[0].severity == SeverityLevel.CRITICAL  # Highest severity first
+    assert top_issues[1].severity == SeverityLevel.HIGH
 
 def test_get_top_issues_max_limit(settings, mock_components):
     """Test top issues respects maximum limit"""
@@ -421,7 +421,7 @@ def test_get_top_issues_max_limit(settings, mock_components):
             similar_logs=[log_record],  # Include the log in similar_logs to match count
             count=1
         )
-        cluster.severity_score = 8
+        cluster.severity = SeverityLevel.HIGH
         many_clusters.append(cluster)
 
     top_issues = engine.get_top_issues(many_clusters, max_issues=5)

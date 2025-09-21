@@ -13,6 +13,51 @@ class LogLevel(Enum):
     CRITICAL = "CRITICAL"
 
 
+class SeverityLevel(Enum):
+    """Enumeration for severity levels in log analysis"""
+    LOW = "low"          # 1-4: Informational, not actionable
+    MEDIUM = "medium"    # 5-6: Warning, potentially actionable
+    HIGH = "high"        # 7-8: Error, requires attention
+    CRITICAL = "critical" # 9-10: Critical, immediate action required
+
+    @property
+    def numeric_value(self) -> int:
+        """Get representative numeric value for this severity level"""
+        mapping = {
+            SeverityLevel.LOW: 2,
+            SeverityLevel.MEDIUM: 5,
+            SeverityLevel.HIGH: 7,
+            SeverityLevel.CRITICAL: 9
+        }
+        return mapping[self]
+
+    @classmethod
+    def from_numeric(cls, value: int) -> 'SeverityLevel':
+        """Convert numeric severity (1-10) to SeverityLevel enum"""
+        if 1 <= value <= 4:
+            return cls.LOW
+        elif 5 <= value <= 6:
+            return cls.MEDIUM
+        elif 7 <= value <= 8:
+            return cls.HIGH
+        elif 9 <= value <= 10:
+            return cls.CRITICAL
+        else:
+            raise ValueError(f"Severity value must be between 1 and 10, got {value}")
+
+    def is_actionable(self) -> bool:
+        """Check if this severity level indicates actionable issues"""
+        return self in [SeverityLevel.MEDIUM, SeverityLevel.HIGH, SeverityLevel.CRITICAL]
+
+    def is_high_severity(self) -> bool:
+        """Check if this is high severity (HIGH or CRITICAL)"""
+        return self in [SeverityLevel.HIGH, SeverityLevel.CRITICAL]
+
+    def is_critical(self) -> bool:
+        """Check if this is critical severity"""
+        return self == SeverityLevel.CRITICAL
+
+
 
 
 @dataclass
@@ -73,7 +118,7 @@ class LogCluster:
     representative_log: LogRecord
     similar_logs: List[LogRecord]
     count: int
-    severity_score: Optional[int] = None  # 1-10 scale set by LLM
+    severity: Optional[SeverityLevel] = None  # Severity level set by LLM
 
     def __post_init__(self):
         """Validate the cluster after initialization"""
@@ -83,9 +128,6 @@ class LogCluster:
             raise ValueError("Count must match number of similar logs")
         if self.representative_log not in self.similar_logs:
             raise ValueError("Representative log must be in similar_logs list")
-        if self.severity_score is not None:
-            if not (1 <= self.severity_score <= 10):
-                raise ValueError("Severity score must be between 1 and 10")
 
     @property
     def error_count(self) -> int:
@@ -103,33 +145,48 @@ class LogCluster:
         return min(timestamps), max(timestamps)
 
     def is_high_severity(self) -> bool:
-        """Check if cluster has high severity (7+)"""
-        return self.severity_score is not None and self.severity_score >= 7
+        """Check if cluster has high severity"""
+        return self.severity is not None and self.severity.is_high_severity()
+
+    def is_actionable(self) -> bool:
+        """Check if cluster indicates actionable issues"""
+        return self.severity is not None and self.severity.is_actionable()
+
+    @property
+    def severity_score(self) -> Optional[int]:
+        """Get numeric severity score for backward compatibility"""
+        return self.severity.numeric_value if self.severity else None
 
 
 @dataclass
 class AnalyzedLog:
     """Represents a log that has been analyzed by LLM"""
     log: LogRecord
-    severity: int  # 1-10 scale from LLM
+    severity: SeverityLevel
     reasoning: str
 
     def __post_init__(self):
         """Validate the analyzed log after initialization"""
-        if not (1 <= self.severity <= 10):
-            raise ValueError("Severity must be between 1 and 10")
+        if not isinstance(self.severity, SeverityLevel):
+            raise ValueError("Severity must be a SeverityLevel enum")
         if not self.reasoning.strip():
             raise ValueError("Reasoning cannot be empty")
 
     def is_actionable(self) -> bool:
         """Check if this analysis indicates actionable issues"""
-        return self.severity >= 5
+        return self.severity.is_actionable()
+
+    @property
+    def severity_score(self) -> int:
+        """Get numeric severity score for backward compatibility"""
+        return self.severity.numeric_value
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation"""
         return {
             'log': self.log.to_dict(),
-            'severity': self.severity,
+            'severity': self.severity.value,
+            'severity_score': self.severity.numeric_value,
             'reasoning': self.reasoning,
             'is_actionable': self.is_actionable()
         }
@@ -183,8 +240,8 @@ class DailyAnalysisResult:
         return (self.warning_count / self.total_logs_processed) * 100
 
     def get_critical_issues(self) -> List[AnalyzedLog]:
-        """Get issues with severity >= 8"""
-        return [issue for issue in self.top_issues if issue.severity >= 8]
+        """Get issues with high or critical severity"""
+        return [issue for issue in self.top_issues if issue.severity.is_high_severity()]
 
     def get_health_status(self) -> Literal["healthy", "warning", "critical"]:
         """Get health status based on health score"""

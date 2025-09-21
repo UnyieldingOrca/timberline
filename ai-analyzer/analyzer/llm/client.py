@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from openai import OpenAI
 
-from ..models.log import LogRecord, LogCluster, AnalyzedLog
+from ..models.log import LogRecord, LogCluster, AnalyzedLog, SeverityLevel
 from ..config.settings import Settings
 
 
@@ -128,8 +128,8 @@ class LLMClient:
         analysis_data = json.loads(response.content)
         return self._parse_analysis_response(logs, analysis_data)
 
-    def rank_severity(self, clusters: List[LogCluster]) -> List[int]:
-        """Rank log clusters by severity (1-10 scale)"""
+    def rank_severity(self, clusters: List[LogCluster]) -> List[SeverityLevel]:
+        """Rank log clusters by severity level"""
         if not clusters:
             return []
 
@@ -145,7 +145,16 @@ class LLMClient:
         if len(scores) != len(clusters):
             raise LLMError(f"LLM returned {len(scores)} scores for {len(clusters)} clusters")
 
-        return scores
+        # Convert numeric scores to SeverityLevel enums
+        severity_levels = []
+        for score in scores:
+            try:
+                severity_levels.append(SeverityLevel.from_numeric(score))
+            except ValueError as e:
+                logger.warning(f"Invalid severity score {score}, defaulting to LOW: {e}")
+                severity_levels.append(SeverityLevel.LOW)
+
+        return severity_levels
 
     def generate_daily_summary(self, total_logs: int, error_count: int, warning_count: int,
                              top_issues: List[AnalyzedLog]) -> str:
@@ -260,12 +269,19 @@ Be concise and actionable."""
             if not analysis:
                 raise LLMError(f"Missing analysis for log {len(analyzed_logs) + 1} in LLM response")
 
-            severity = max(1, min(10, analysis.get("severity", 5)))
+            severity_score = max(1, min(10, analysis.get("severity", 5)))
             reasoning = analysis.get("reasoning", "No specific reasoning provided")
+
+            # Convert numeric severity to SeverityLevel enum
+            try:
+                severity_level = SeverityLevel.from_numeric(severity_score)
+            except ValueError:
+                logger.warning(f"Invalid severity score {severity_score}, defaulting to MEDIUM")
+                severity_level = SeverityLevel.MEDIUM
 
             analyzed_logs.append(AnalyzedLog(
                 log=log,
-                severity=severity,
+                severity=severity_level,
                 reasoning=reasoning
             ))
 

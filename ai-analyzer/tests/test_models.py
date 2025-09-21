@@ -5,7 +5,7 @@ import pytest
 from datetime import date, datetime
 from analyzer.models.log import (
     LogRecord, LogCluster, AnalyzedLog, DailyAnalysisResult,
-    LogLevel
+    LogLevel, SeverityLevel
 )
 
 
@@ -16,6 +16,66 @@ def test_log_level_values():
     assert LogLevel.WARNING.value == "WARNING"
     assert LogLevel.ERROR.value == "ERROR"
     assert LogLevel.CRITICAL.value == "CRITICAL"
+
+
+def test_severity_level_values():
+    """Test that all expected severity levels exist"""
+    assert SeverityLevel.LOW.value == "low"
+    assert SeverityLevel.MEDIUM.value == "medium"
+    assert SeverityLevel.HIGH.value == "high"
+    assert SeverityLevel.CRITICAL.value == "critical"
+
+
+def test_severity_level_numeric_values():
+    """Test numeric value mapping"""
+    assert SeverityLevel.LOW.numeric_value == 2
+    assert SeverityLevel.MEDIUM.numeric_value == 5
+    assert SeverityLevel.HIGH.numeric_value == 7
+    assert SeverityLevel.CRITICAL.numeric_value == 9
+
+
+def test_severity_level_from_numeric():
+    """Test conversion from numeric values"""
+    assert SeverityLevel.from_numeric(1) == SeverityLevel.LOW
+    assert SeverityLevel.from_numeric(4) == SeverityLevel.LOW
+    assert SeverityLevel.from_numeric(5) == SeverityLevel.MEDIUM
+    assert SeverityLevel.from_numeric(6) == SeverityLevel.MEDIUM
+    assert SeverityLevel.from_numeric(7) == SeverityLevel.HIGH
+    assert SeverityLevel.from_numeric(8) == SeverityLevel.HIGH
+    assert SeverityLevel.from_numeric(9) == SeverityLevel.CRITICAL
+    assert SeverityLevel.from_numeric(10) == SeverityLevel.CRITICAL
+
+
+def test_severity_level_from_numeric_invalid():
+    """Test invalid numeric values raise error"""
+    with pytest.raises(ValueError, match="Severity value must be between 1 and 10"):
+        SeverityLevel.from_numeric(0)
+    with pytest.raises(ValueError, match="Severity value must be between 1 and 10"):
+        SeverityLevel.from_numeric(11)
+
+
+def test_severity_level_is_actionable():
+    """Test actionable detection"""
+    assert SeverityLevel.LOW.is_actionable() is False
+    assert SeverityLevel.MEDIUM.is_actionable() is True
+    assert SeverityLevel.HIGH.is_actionable() is True
+    assert SeverityLevel.CRITICAL.is_actionable() is True
+
+
+def test_severity_level_is_high_severity():
+    """Test high severity detection"""
+    assert SeverityLevel.LOW.is_high_severity() is False
+    assert SeverityLevel.MEDIUM.is_high_severity() is False
+    assert SeverityLevel.HIGH.is_high_severity() is True
+    assert SeverityLevel.CRITICAL.is_high_severity() is True
+
+
+def test_severity_level_is_critical():
+    """Test critical severity detection"""
+    assert SeverityLevel.LOW.is_critical() is False
+    assert SeverityLevel.MEDIUM.is_critical() is False
+    assert SeverityLevel.HIGH.is_critical() is False
+    assert SeverityLevel.CRITICAL.is_critical() is True
 
 
 
@@ -193,15 +253,18 @@ def test_representative_not_in_logs_raises_error(sample_logs):
         )
 
 
-def test_invalid_severity_score_raises_error(sample_logs):
-    """Test that invalid severity score raises error"""
-    with pytest.raises(ValueError, match="Severity score must be between 1 and 10"):
-        LogCluster(
-            representative_log=sample_logs[0],
-            similar_logs=sample_logs,
-            count=3,
-            severity_score=15  # Invalid score
-        )
+def test_cluster_with_severity(sample_logs):
+    """Test cluster with severity level"""
+    cluster = LogCluster(
+        representative_log=sample_logs[0],
+        similar_logs=sample_logs,
+        count=3,
+        severity=SeverityLevel.HIGH
+    )
+    assert cluster.severity == SeverityLevel.HIGH
+    assert cluster.severity_score == 7
+    assert cluster.is_high_severity() is True
+    assert cluster.is_actionable() is True
 
 
 def test_error_count_property(sample_logs):
@@ -246,15 +309,15 @@ def test_is_high_severity(sample_logs):
         representative_log=sample_logs[0],
         similar_logs=sample_logs,
         count=3,
-        severity_score=8
+        severity=SeverityLevel.HIGH
     )
     low_severity_cluster = LogCluster(
         representative_log=sample_logs[0],
         similar_logs=sample_logs,
         count=3,
-        severity_score=3
+        severity=SeverityLevel.LOW
     )
-    no_score_cluster = LogCluster(
+    no_severity_cluster = LogCluster(
         representative_log=sample_logs[0],
         similar_logs=sample_logs,
         count=3
@@ -262,7 +325,7 @@ def test_is_high_severity(sample_logs):
 
     assert high_severity_cluster.is_high_severity() is True
     assert low_severity_cluster.is_high_severity() is False
-    assert no_score_cluster.is_high_severity() is False
+    assert no_severity_cluster.is_high_severity() is False
 
 
 @pytest.fixture
@@ -278,18 +341,19 @@ def test_valid_analyzed_log_creation(sample_log):
     """Test creating a valid analyzed log"""
     analyzed = AnalyzedLog(
         log=sample_log,
-        severity=8,
+        severity=SeverityLevel.HIGH,
         reasoning="Critical database connection error"
     )
-    assert analyzed.severity == 8
+    assert analyzed.severity == SeverityLevel.HIGH
+    assert analyzed.severity_score == 7
     assert analyzed.reasoning == "Critical database connection error"
 
 
 def test_invalid_severity_raises_error(sample_log):
-    """Test that invalid severity raises error"""
-    with pytest.raises(ValueError, match="Severity must be between 1 and 10"):
+    """Test that invalid severity type raises error"""
+    with pytest.raises(ValueError, match="Severity must be a SeverityLevel enum"):
         AnalyzedLog(
-            log=sample_log, severity=15, reasoning="test"
+            log=sample_log, severity="invalid", reasoning="test"
         )
 
 
@@ -297,7 +361,7 @@ def test_empty_reasoning_raises_error(sample_log):
     """Test that empty reasoning raises error"""
     with pytest.raises(ValueError, match="Reasoning cannot be empty"):
         AnalyzedLog(
-            log=sample_log, severity=5, reasoning=""
+            log=sample_log, severity=SeverityLevel.MEDIUM, reasoning=""
         )
 
 
@@ -306,10 +370,10 @@ def test_empty_reasoning_raises_error(sample_log):
 def test_is_actionable(sample_log):
     """Test actionable detection"""
     actionable = AnalyzedLog(
-        log=sample_log, severity=7, reasoning="test"
+        log=sample_log, severity=SeverityLevel.HIGH, reasoning="test"
     )
     not_actionable = AnalyzedLog(
-        log=sample_log, severity=3, reasoning="test"
+        log=sample_log, severity=SeverityLevel.LOW, reasoning="test"
     )
 
     assert actionable.is_actionable() is True
@@ -319,10 +383,11 @@ def test_is_actionable(sample_log):
 def test_analyzed_log_to_dict(sample_log):
     """Test dictionary conversion"""
     analyzed = AnalyzedLog(
-        log=sample_log, severity=8, reasoning="test"
+        log=sample_log, severity=SeverityLevel.HIGH, reasoning="test"
     )
     result = analyzed.to_dict()
-    assert result['severity'] == 8
+    assert result['severity'] == "high"
+    assert result['severity_score'] == 7
     assert result['reasoning'] == "test"
     assert 'log' in result
     assert 'is_actionable' in result
@@ -339,7 +404,7 @@ def sample_analysis_result():
         representative_log=log, similar_logs=[log], count=1
     )
     analyzed_log = AnalyzedLog(
-        log=log, severity=8, reasoning="test"
+        log=log, severity=SeverityLevel.HIGH, reasoning="test"
     )
 
     return DailyAnalysisResult(
@@ -410,7 +475,7 @@ def test_too_many_top_issues_raises_error():
         id=1, timestamp=1640995200000, message="error", source="pod",
         metadata={}, embedding=[0.1], level="ERROR"
     )
-    issues = [AnalyzedLog(log=log, severity=5, reasoning="test")
+    issues = [AnalyzedLog(log=log, severity=SeverityLevel.MEDIUM, reasoning="test")
               for _ in range(15)]  # Too many
 
     with pytest.raises(ValueError, match="Top issues should not exceed 10 items"):

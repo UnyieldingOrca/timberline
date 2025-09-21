@@ -10,7 +10,7 @@ from analyzer.llm.client import (
     LLMClient, LLMError, LLMConnectionError, LLMResponseError, LLMResponse
 )
 from analyzer.config.settings import Settings
-from analyzer.models.log import LogRecord, LogCluster, AnalyzedLog
+from analyzer.models.log import LogRecord, LogCluster, AnalyzedLog, SeverityLevel
 
 @pytest.fixture
 def llm_settings():
@@ -225,8 +225,8 @@ def test_analyze_log_batch_success(llm_settings, sample_logs):
 
         assert len(results) == 3
         assert all(isinstance(r, AnalyzedLog) for r in results)
-        assert results[0].severity == 8
-        assert results[1].severity == 2
+        assert results[0].severity == SeverityLevel.HIGH
+        assert results[1].severity == SeverityLevel.LOW
 
 def test_analyze_log_batch_json_parse_error(llm_settings, sample_logs):
     """Test analyze_log_batch with JSON parse error - should raise exception"""
@@ -266,7 +266,7 @@ def test_rank_severity_success(llm_settings, sample_clusters):
         client = LLMClient(llm_settings)
         scores = client.rank_severity(sample_clusters)
 
-        assert scores == [8, 5]
+        assert scores == [SeverityLevel.HIGH, SeverityLevel.MEDIUM]
 
 def test_rank_severity_insufficient_scores(llm_settings, sample_clusters):
     """Test severity ranking with insufficient scores - should raise exception"""
@@ -311,7 +311,7 @@ def test_generate_daily_summary_success(llm_settings, sample_logs):
         top_issues = [
             AnalyzedLog(
                 log=sample_logs[0],
-                severity=8,
+                severity=SeverityLevel.HIGH,
                 reasoning="Critical database error"
             )
         ]
@@ -384,7 +384,7 @@ def test_create_summary_prompt(llm_settings, sample_logs):
         top_issues = [
             AnalyzedLog(
                 log=sample_logs[0],
-                severity=8,
+                severity=SeverityLevel.HIGH,
                 reasoning="Database error"
             )
         ]
@@ -413,9 +413,9 @@ def test_parse_analysis_response_success(llm_settings, sample_logs):
         results = client._parse_analysis_response(sample_logs, analysis_data)
 
         assert len(results) == 3
-        assert results[0].severity == 9
-        assert results[1].severity == 3
-        assert results[2].severity == 6
+        assert results[0].severity == SeverityLevel.CRITICAL
+        assert results[1].severity == SeverityLevel.LOW
+        assert results[2].severity == SeverityLevel.MEDIUM
 
 def test_parse_analysis_response_missing_analyses(llm_settings, sample_logs):
     """Test analysis response parsing with missing analyses - should raise exception"""

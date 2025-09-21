@@ -55,7 +55,8 @@ class ReportGenerator:
                         "id": i,
                         "representative_message": self._truncate_message(cluster.representative_log.message, 200),
                         "count": cluster.count,
-                        "severity_score": getattr(cluster, 'severity_score', 0),
+                        "severity": cluster.severity.value if cluster.severity else "low",
+                        "severity_score": cluster.severity_score if cluster.severity else 0,
                         "source": cluster.representative_log.source,
                         "level": cluster.representative_log.level,
                         "timestamp": cluster.representative_log.timestamp
@@ -64,7 +65,8 @@ class ReportGenerator:
                 ],
                 "top_issues": [
                     {
-                        "severity": issue.severity,
+                        "severity": issue.severity.value,
+                        "severity_score": issue.severity.numeric_value,
                         "reasoning": issue.reasoning,
                         "message": self._truncate_message(issue.log.message, 200),
                         "source": issue.log.source,

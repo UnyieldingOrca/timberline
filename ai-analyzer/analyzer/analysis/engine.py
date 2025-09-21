@@ -3,7 +3,7 @@ from typing import List, Optional
 from loguru import logger
 import time
 
-from ..models.log import DailyAnalysisResult, LogCluster, AnalyzedLog, LogRecord
+from ..models.log import DailyAnalysisResult, LogCluster, AnalyzedLog, LogRecord, SeverityLevel
 from ..storage.milvus_client import MilvusQueryEngine, MilvusConnectionError
 from ..llm.client import LLMClient
 from ..reporting.generator import ReportGenerator, ReportGeneratorError
@@ -194,23 +194,24 @@ class AnalysisEngine:
         logger.info(f"Processing {len(clusters)} log clusters")
 
         # Rank clusters by severity using LLM
-        severity_scores = self.llm_client.rank_severity(clusters)
+        severity_levels = self.llm_client.rank_severity(clusters)
 
-        # Update clusters with severity scores
+        # Update clusters with severity levels
         for i, cluster in enumerate(clusters):
-            cluster.severity_score = severity_scores[i]
+            cluster.severity = severity_levels[i]
 
-        # Analyze representative logs from high-priority clusters
-        high_priority_clusters = [c for c in clusters if getattr(c, 'severity_score', 0) >= 5]
+        # Analyze representative logs from actionable clusters
+        actionable_clusters = [c for c in clusters if c.is_actionable()]
 
-        if high_priority_clusters:
-            representative_logs = [c.representative_log for c in high_priority_clusters[:10]]  # Limit for efficiency
+        if actionable_clusters:
+            representative_logs = [c.representative_log for c in actionable_clusters[:10]]  # Limit for efficiency
             analyzed_logs = self.llm_client.analyze_log_batch(representative_logs)
-            # Update with LLM analysis results
-            for cluster, analyzed in zip(high_priority_clusters, analyzed_logs):
-                cluster.severity_score = max(cluster.severity_score, analyzed.severity)
+            # Update with LLM analysis results - use higher severity if found
+            for cluster, analyzed in zip(actionable_clusters, analyzed_logs):
+                if analyzed.severity.numeric_value > cluster.severity.numeric_value:
+                    cluster.severity = analyzed.severity
 
-        logger.info(f"Processed clusters: {len([c for c in clusters if getattr(c, 'severity_score', 0) >= 5])} significant issues found")
+        logger.info(f"Processed clusters: {len(actionable_clusters)} actionable issues found")
         return clusters
 
 
@@ -232,7 +233,7 @@ class AnalysisEngine:
 
         # Factor in LLM severity analysis if available
         if analyzed_clusters:
-            cluster_scores = [getattr(c, 'severity_score', 5) for c in analyzed_clusters]
+            cluster_scores = [c.severity_score for c in analyzed_clusters if c.severity is not None]
             if cluster_scores:
                 avg_severity = sum(cluster_scores) / len(cluster_scores)
                 # Normalize severity impact (1-10 scale to 0-1)
@@ -255,17 +256,16 @@ class AnalysisEngine:
         all_issues = []
 
         for cluster in analyzed_clusters:
-            severity_score = getattr(cluster, 'severity_score', 0)
-            if severity_score >= 5:  # Only significant issues
+            if cluster.is_actionable():  # Only actionable issues
                 analyzed_log = AnalyzedLog(
                     log=cluster.representative_log,
-                    severity=severity_score,
-                    reasoning=f"Cluster of {cluster.count} similar logs (severity: {severity_score})"
+                    severity=cluster.severity,
+                    reasoning=f"Cluster of {cluster.count} similar logs (severity: {cluster.severity.value})"
                 )
                 all_issues.append(analyzed_log)
 
         # Sort by severity (descending) and return top issues
-        all_issues.sort(key=lambda x: x.severity, reverse=True)
+        all_issues.sort(key=lambda x: x.severity.numeric_value, reverse=True)
         top_issues = all_issues[:max_issues]
 
         logger.info(f"Identified {len(top_issues)} top issues from {len(analyzed_clusters)} clusters")
