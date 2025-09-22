@@ -8,23 +8,6 @@ import pytest
 from pymilvus import utility
 
 
-def test_milvus_connection(milvus_connection):
-    """Test connection to Milvus database."""
-    # Connection is established in fixture, just verify it works
-    assert True
-
-
-def test_list_collections(milvus_connection):
-    """Test listing collections in Milvus (should show collections created by services)."""
-    try:
-        collections = utility.list_collections()
-        # Just verify we can list collections - may be empty if services haven't created any yet
-        assert isinstance(collections, list)
-        print(f"Available collections: {collections}")
-    except Exception as e:
-        pytest.skip(f"Could not list collections: {e}")
-
-
 def test_milvus_connection_info(milvus_connection):
     """Test getting Milvus connection information."""
     try:

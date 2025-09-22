@@ -120,6 +120,7 @@ class LogCluster:
     count: int
     severity: Optional[SeverityLevel] = None  # Severity level set by LLM
     reasoning: Optional[str] = None  # LLM reasoning for the severity assessment
+    common_labels: Dict[str, str] = field(default_factory=dict)  # Common Kubernetes labels across all logs
 
     def __post_init__(self):
         """Validate the cluster after initialization"""
@@ -130,6 +131,10 @@ class LogCluster:
         if self.representative_log not in self.similar_logs:
             raise ValueError("Representative log must be in similar_logs list")
 
+        # Compute common labels if not already set
+        if not self.common_labels:
+            self.common_labels = self._extract_common_labels()
+
     @property
     def error_count(self) -> int:
         """Count of error/critical logs in cluster"""
@@ -139,6 +144,50 @@ class LogCluster:
     def sources(self) -> List[str]:
         """Unique sources in this cluster"""
         return list(set(log.source for log in self.similar_logs))
+
+    def _extract_common_labels(self) -> Dict[str, str]:
+        """Extract labels that are common to all logs in the cluster"""
+        if not self.similar_logs:
+            return {}
+
+        # Start with labels from the first log
+        first_log_labels = self._extract_log_labels(self.similar_logs[0])
+        if not first_log_labels:
+            return {}
+
+        # Find intersection of labels across all logs
+        common = first_log_labels.copy()
+        for log in self.similar_logs[1:]:
+            log_labels = self._extract_log_labels(log)
+            # Keep only labels that exist in both sets with same value
+            common = {k: v for k, v in common.items()
+                     if k in log_labels and log_labels[k] == v}
+
+        return common
+
+    def _extract_log_labels(self, log: LogRecord) -> Dict[str, str]:
+        """Extract Kubernetes labels from a single log's metadata"""
+        if not isinstance(log.metadata, dict):
+            return {}
+
+        # Labels can be stored in different places in metadata
+        labels = log.metadata.get("labels", {})
+
+        # Handle case where labels might be stored as kubernetes_labels
+        if not labels:
+            labels = log.metadata.get("kubernetes_labels", {})
+
+        # Handle case where labels are nested under kubernetes metadata
+        if not labels and "kubernetes" in log.metadata:
+            k8s_metadata = log.metadata["kubernetes"]
+            if isinstance(k8s_metadata, dict):
+                labels = k8s_metadata.get("labels", {})
+
+        # Ensure labels is a dict and contains only string values
+        if isinstance(labels, dict):
+            return {str(k): str(v) for k, v in labels.items()}
+
+        return {}
 
     def get_time_range(self) -> tuple[datetime, datetime]:
         """Get the time range of logs in this cluster"""
@@ -169,6 +218,7 @@ class LogCluster:
             'count': self.count,
             'error_count': self.error_count,
             'sources': self.sources,
+            'common_labels': self.common_labels,
             'time_range': {
                 'start': self.get_time_range()[0].isoformat(),
                 'end': self.get_time_range()[1].isoformat()

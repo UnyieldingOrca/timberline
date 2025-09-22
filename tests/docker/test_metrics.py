@@ -8,7 +8,7 @@ import requests
 
 
 @pytest.mark.parametrize("service_name,url", [
-    ("Log Collector", "http://localhost:9090/metrics"),
+    ("Log Collector", "http://localhost:2020/api/v1/metrics"),
     ("Log Ingestor", "http://localhost:9092/metrics"),
     ("Milvus Health", "http://localhost:9091/healthz")
 ])
@@ -21,16 +21,17 @@ def test_metrics_endpoint_accessibility(service_name, url, http_retry):
 
 def test_log_collector_metrics_content(http_retry):
     """Test log collector metrics endpoint content."""
-    response = http_retry("http://localhost:9090/metrics", timeout=10)
+    response = http_retry("http://localhost:2020/api/v1/metrics", timeout=10)
     assert response.status_code == 200
 
     metrics_text = response.text
     assert len(metrics_text) > 0, "Metrics response is empty"
 
-    # Look for expected Prometheus metrics
-    expected_metrics = ["go_", "promhttp_"]
-    found_metrics = [metric for metric in expected_metrics if metric in metrics_text]
-    assert len(found_metrics) > 0, f"No expected metrics found. Available metrics preview: {metrics_text[:500]}"
+    # Fluent Bit returns JSON metrics, check for expected structure
+    import json
+    metrics_data = json.loads(metrics_text)
+    assert "input" in metrics_data, f"Expected 'input' in metrics data: {metrics_text[:500]}"
+    assert "output" in metrics_data, f"Expected 'output' in metrics data: {metrics_text[:500]}"
 
 
 def test_log_ingestor_metrics_content(http_retry):
@@ -61,8 +62,7 @@ def test_milvus_health_endpoint(http_retry):
 def test_standard_go_metrics_present(metric_pattern, http_retry):
     """Test that standard Go metrics are present in service endpoints."""
     endpoints = [
-        "http://localhost:9090/metrics",  # Log Collector
-        "http://localhost:9092/metrics"   # Log Ingestor
+        "http://localhost:9092/metrics"   # Log Ingestor (only test Prometheus-format metrics)
     ]
 
     for endpoint in endpoints:
@@ -77,7 +77,6 @@ def test_standard_go_metrics_present(metric_pattern, http_retry):
 def test_metrics_format_validity(http_retry):
     """Test that metrics are in valid Prometheus format."""
     endpoints = [
-        ("Log Collector", "http://localhost:9090/metrics"),
         ("Log Ingestor", "http://localhost:9092/metrics")
     ]
 
@@ -102,7 +101,7 @@ def test_metrics_format_validity(http_retry):
 def test_metrics_response_time(http_retry):
     """Test that metrics endpoints respond quickly."""
     endpoints = [
-        "http://localhost:9090/metrics",
+        "http://localhost:2020/api/v1/metrics",
         "http://localhost:9092/metrics",
         "http://localhost:9091/healthz"
     ]
@@ -120,7 +119,7 @@ def test_metrics_response_time(http_retry):
 
 def test_metrics_consistency_across_calls(http_retry):
     """Test that metrics endpoints return consistent data structure across multiple calls."""
-    endpoint = "http://localhost:9090/metrics"
+    endpoint = "http://localhost:2020/api/v1/metrics"
 
     # Make two calls
     response1 = http_retry(endpoint, timeout=10)
@@ -129,28 +128,19 @@ def test_metrics_consistency_across_calls(http_retry):
     assert response1.status_code == 200
     assert response2.status_code == 200
 
-    # Extract metric names from both responses
-    def extract_metric_names(text):
-        lines = text.split('\n')
-        metric_names = set()
-        for line in lines:
-            if line and not line.startswith('#'):
-                parts = line.split()
-                if len(parts) >= 2:
-                    metric_name = parts[0].split('{')[0]  # Remove labels
-                    metric_names.add(metric_name)
-        return metric_names
+    # Extract metric structure from JSON responses
+    import json
+    metrics1 = json.loads(response1.text)
+    metrics2 = json.loads(response2.text)
 
-    metrics1 = extract_metric_names(response1.text)
-    metrics2 = extract_metric_names(response2.text)
+    # Core structure should be consistent
+    assert "input" in metrics1 and "input" in metrics2, "Input metrics should be present in both calls"
+    assert "output" in metrics1 and "output" in metrics2, "Output metrics should be present in both calls"
 
-    # Core metrics should be present in both responses
-    common_metrics = metrics1.intersection(metrics2)
-    assert len(common_metrics) > 0, "No common metrics found between two calls"
-
-    # Most metrics should be consistent (some may vary due to timing)
-    consistency_ratio = len(common_metrics) / max(len(metrics1), len(metrics2))
-    assert consistency_ratio > 0.8, f"Metrics inconsistent across calls: {consistency_ratio:.2f}"
+    # Structure keys should be the same
+    keys1 = set(metrics1.keys())
+    keys2 = set(metrics2.keys())
+    assert keys1 == keys2, f"Metrics structure inconsistent: {keys1} vs {keys2}"
 
 
 def test_all_metrics_endpoints_simultaneously(metrics_endpoints, http_retry):

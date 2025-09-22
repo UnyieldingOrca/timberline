@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from loguru import logger
-import random
-# Removed sklearn and numpy imports as we're now using label-based clustering
+import numpy as np
+from sklearn.cluster import DBSCAN
+from sklearn.metrics.pairwise import cosine_similarity
 
 from pymilvus import connections, Collection, utility, DataType, CollectionSchema, FieldSchema
 from pymilvus.exceptions import MilvusException
@@ -162,42 +163,98 @@ class MilvusQueryEngine:
             raise
 
     def cluster_similar_logs(self, logs: List[LogRecord]) -> List[LogCluster]:
-        """Group logs by Kubernetes label keys and values instead of embeddings"""
+        """Cluster logs using DBSCAN algorithm on embeddings"""
         if not logs:
             return []
 
-        logger.info(f"Clustering {len(logs)} logs by Kubernetes labels")
+        logger.info(f"Clustering {len(logs)} logs using DBSCAN on embeddings")
 
-        # Group logs by their label combinations
-        label_clusters = {}
+        # Extract embeddings and validate they exist
+        embeddings = []
+        valid_logs = []
 
         for log in logs:
-            # Extract Kubernetes labels from metadata
-            labels = self._extract_labels(log)
+            if log.embedding and len(log.embedding) > 0:
+                embeddings.append(log.embedding)
+                valid_logs.append(log)
+            else:
+                logger.warning(f"Log {log.id} has no embedding, excluding from clustering")
 
-            # Create a hashable key from sorted label items
-            label_key = self._create_label_key(labels)
+        if len(valid_logs) < 2:
+            logger.warning("Not enough logs with embeddings for clustering")
+            if valid_logs:
+                # Return single cluster with the only log
+                return [LogCluster(
+                    representative_log=valid_logs[0],
+                    similar_logs=valid_logs,
+                    count=1
+                )]
+            return []
 
-            if label_key not in label_clusters:
-                label_clusters[label_key] = []
-            label_clusters[label_key].append(log)
+        # Convert to numpy array
+        embeddings_array = np.array(embeddings)
+
+        # Calculate cosine distance matrix
+        cosine_sim_matrix = cosine_similarity(embeddings_array)
+        cosine_distance_matrix = 1 - cosine_sim_matrix
+
+        # Ensure non-negative values (due to floating point precision issues)
+        cosine_distance_matrix = np.maximum(cosine_distance_matrix, 0)
+
+        # Apply DBSCAN clustering
+        # eps: maximum distance between samples to be considered neighbors
+        # min_samples: minimum number of samples in neighborhood for core point
+        eps = 0.3  # Adjust based on your embedding space
+        min_samples = 2  # Minimum cluster size
+
+        dbscan = DBSCAN(
+            eps=eps,
+            min_samples=min_samples,
+            metric='precomputed'
+        )
+
+        cluster_labels = dbscan.fit_predict(cosine_distance_matrix)
+
+        # Group logs by cluster labels
+        clusters_dict = {}
+        noise_logs = []
+
+        for i, label in enumerate(cluster_labels):
+            if label == -1:  # Noise point
+                noise_logs.append(valid_logs[i])
+            else:
+                if label not in clusters_dict:
+                    clusters_dict[label] = []
+                clusters_dict[label].append(valid_logs[i])
 
         # Create LogCluster objects
         clusters = []
-        for label_key, cluster_logs in label_clusters.items():
-            # Choose representative log (prioritize ERROR/CRITICAL, then most recent)
-            representative = self._choose_representative_log(cluster_logs)
 
+        # Process clustered logs
+        for cluster_id, cluster_logs in clusters_dict.items():
+            if len(cluster_logs) >= min_samples:
+                # Find representative log closest to centroid
+                representative = self._choose_representative_by_centroid(cluster_logs)
+
+                clusters.append(LogCluster(
+                    representative_log=representative,
+                    similar_logs=cluster_logs,
+                    count=len(cluster_logs)
+                ))
+
+        # Handle noise points as individual clusters
+        for noise_log in noise_logs:
             clusters.append(LogCluster(
-                representative_log=representative,
-                similar_logs=cluster_logs,
-                count=len(cluster_logs)
+                representative_log=noise_log,
+                similar_logs=[noise_log],
+                count=1
             ))
 
-        # Sort clusters by severity and count
+        # Sort clusters by count and severity
         clusters.sort(key=lambda c: (c.representative_log.is_error_or_critical(), c.count), reverse=True)
 
-        logger.info(f"Created {len(clusters)} label-based clusters from {len(logs)} logs")
+        logger.info(f"DBSCAN clustering created {len(clusters)} clusters "
+                   f"(from {len(clusters_dict)} actual clusters + {len(noise_logs)} noise points)")
         return clusters
 
 
@@ -230,6 +287,40 @@ class MilvusQueryEngine:
         except Exception as e:
             logger.error(f"Milvus health check failed: {e}")
             return False
+
+    def _choose_representative_by_centroid(self, logs: List[LogRecord]) -> LogRecord:
+        """Choose representative log closest to the centroid of embeddings"""
+        if not logs:
+            raise ValueError("Cannot choose representative from empty log list")
+
+        if len(logs) == 1:
+            return logs[0]
+
+        # Extract embeddings
+        embeddings = []
+        valid_logs = []
+
+        for log in logs:
+            if log.embedding and len(log.embedding) > 0:
+                embeddings.append(log.embedding)
+                valid_logs.append(log)
+
+        if not valid_logs:
+            # Fallback to timestamp-based selection if no embeddings
+            return self._choose_representative_log(logs)
+
+        if len(valid_logs) == 1:
+            return valid_logs[0]
+
+        # Calculate centroid
+        embeddings_array = np.array(embeddings)
+        centroid = np.mean(embeddings_array, axis=0)
+
+        # Find log closest to centroid using cosine similarity
+        centroid_similarities = cosine_similarity([centroid], embeddings_array)[0]
+        closest_index = np.argmax(centroid_similarities)
+
+        return valid_logs[closest_index]
 
     def _choose_representative_log(self, logs: List[LogRecord]) -> LogRecord:
         """Choose a representative log from a group prioritizing errors and most recent"""

@@ -1,20 +1,88 @@
 """
-Pytest configuration and fixtures for Kubernetes integration tests.
-Provides fixtures for testing against kind clusters.
+Pytest configuration and fixtures for Docker integration tests.
+
+This module provides fixtures for testing the Timberline log analysis platform
+in a Docker environment. It includes automatic cleanup of Milvus collection data
+to ensure reproducible test runs.
+
+Key Features:
+- Automatic Milvus collection data cleanup between test sessions
+- Service health check helpers
+- Log data generation utilities
+- AI analyzer testing support
 """
 
 import pytest
 import requests
 import time
 from pathlib import Path
-from pymilvus import connections
+from pymilvus import connections, Collection, utility
 from .log_generator import LogGenerator
+
+
+@pytest.fixture(scope="function")
+def cleanup_milvus_data():
+    """
+    Automatically clear Milvus collection data when services are available.
+
+    This connects directly to Milvus and removes all data from the collection
+    while preserving the collection schema, ensuring clean test runs without
+    schema mismatch issues.
+    """
+    def try_cleanup():
+        try:
+            # Connect to Milvus with retry
+            connections.connect(
+                alias="cleanup",
+                host="localhost",
+                port="19530",
+                timeout=5
+            )
+
+            # Check if collection exists and delete all data
+            collection_name = "timberline_logs"
+            collection = Collection(collection_name, using="cleanup")
+
+            # Get count before cleanup
+            collection.load()
+            # Delete all entities (keeping schema)
+            collection.delete(expr="id >= 0")  # Delete all records
+            collection.flush()
+            print(f"✓ Cleared records from Milvus collection '{collection_name}'")
+
+        except Exception as e:
+            print(f"⚠ Milvus not available for cleanup: {e}")
+        finally:
+            try:
+                connections.disconnect("cleanup")
+            except:
+                pass
+
+    # Try cleanup now (in case services are already running)
+    try_cleanup()
+
+    yield
+
+    # Try cleanup again at the end (optional)
+    # try_cleanup()
 
 
 @pytest.fixture(scope="session")
 def test_logs_dir():
-    """Provide test logs directory path."""
-    return Path(__file__).parents[2] / "test-logs" / "kind"
+    """Provide standardized test logs directory path for all tests."""
+    # Always use the volumes/test-logs directory for all integration tests
+    # Go up from tests/docker/conftest.py to project root, then into volumes/test-logs
+    test_logs_path = Path(__file__).parent.parent.parent / "volumes" / "test-logs"
+    test_logs_path.mkdir(parents=True, exist_ok=True)
+    return test_logs_path
+
+
+@pytest.fixture(scope="session")
+def volumes_dir():
+    """Provide standardized volumes directory path."""
+    volumes_path = Path(__file__).parent.parent.parent / "volumes"
+    volumes_path.mkdir(parents=True, exist_ok=True)
+    return volumes_path
 
 
 @pytest.fixture
