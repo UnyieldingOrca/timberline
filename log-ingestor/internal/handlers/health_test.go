@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/timberline/log-ingestor/internal/models"
 )
 
@@ -53,7 +54,7 @@ func TestNewHealthHandler(t *testing.T) {
 	storage := &mockStorage{}
 	version := "1.0.0"
 
-	handler := NewHealthHandler(storage, version)
+	handler := NewHealthHandler(storage, version, logrus.New())
 
 	if handler == nil {
 		t.Fatal("Expected handler to be created, got nil")
@@ -74,7 +75,7 @@ func TestNewHealthHandler(t *testing.T) {
 
 func TestHealthHandler_HandleHealth_Healthy(t *testing.T) {
 	storage := &mockStorage{}
-	handler := NewHealthHandler(storage, "1.0.0")
+	handler := NewHealthHandler(storage, "1.0.0", logrus.New())
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rr := httptest.NewRecorder()
@@ -128,7 +129,7 @@ func TestHealthHandler_HandleHealth_Healthy(t *testing.T) {
 
 func TestHealthHandler_HandleHealth_Unhealthy(t *testing.T) {
 	storage := &mockStorage{healthCheckError: true}
-	handler := NewHealthHandler(storage, "1.0.0")
+	handler := NewHealthHandler(storage, "1.0.0", logrus.New())
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rr := httptest.NewRecorder()
@@ -170,7 +171,7 @@ func TestHealthHandler_HandleHealth_Unhealthy(t *testing.T) {
 
 func TestHealthHandler_HandleLiveness(t *testing.T) {
 	storage := &mockStorage{}
-	handler := NewHealthHandler(storage, "1.0.0")
+	handler := NewHealthHandler(storage, "1.0.0", logrus.New())
 
 	req := httptest.NewRequest(http.MethodGet, "/liveness", nil)
 	rr := httptest.NewRecorder()
@@ -189,7 +190,7 @@ func TestHealthHandler_HandleLiveness(t *testing.T) {
 
 func TestHealthHandler_HandleReadiness_Ready(t *testing.T) {
 	storage := &mockStorage{}
-	handler := NewHealthHandler(storage, "1.0.0")
+	handler := NewHealthHandler(storage, "1.0.0", logrus.New())
 
 	req := httptest.NewRequest(http.MethodGet, "/readiness", nil)
 	rr := httptest.NewRecorder()
@@ -208,7 +209,7 @@ func TestHealthHandler_HandleReadiness_Ready(t *testing.T) {
 
 func TestHealthHandler_HandleReadiness_NotReady(t *testing.T) {
 	storage := &mockStorage{healthCheckError: true}
-	handler := NewHealthHandler(storage, "1.0.0")
+	handler := NewHealthHandler(storage, "1.0.0", logrus.New())
 
 	req := httptest.NewRequest(http.MethodGet, "/readiness", nil)
 	rr := httptest.NewRecorder()
@@ -227,7 +228,7 @@ func TestHealthHandler_HandleReadiness_NotReady(t *testing.T) {
 
 func TestHealthHandler_checkStorage_Healthy(t *testing.T) {
 	storage := &mockStorage{}
-	handler := NewHealthHandler(storage, "1.0.0")
+	handler := NewHealthHandler(storage, "1.0.0", logrus.New())
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	check := handler.checkStorage(req.Context())
@@ -245,7 +246,7 @@ func TestHealthHandler_checkStorage_Healthy(t *testing.T) {
 
 func TestHealthHandler_checkStorage_Unhealthy(t *testing.T) {
 	storage := &mockStorage{healthCheckError: true}
-	handler := NewHealthHandler(storage, "1.0.0")
+	handler := NewHealthHandler(storage, "1.0.0", logrus.New())
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	check := handler.checkStorage(req.Context())
@@ -263,7 +264,7 @@ func TestHealthHandler_checkStorage_Unhealthy(t *testing.T) {
 
 func TestHealthHandler_ContentType(t *testing.T) {
 	storage := &mockStorage{}
-	handler := NewHealthHandler(storage, "1.0.0")
+	handler := NewHealthHandler(storage, "1.0.0", logrus.New())
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rr := httptest.NewRecorder()
@@ -278,7 +279,7 @@ func TestHealthHandler_ContentType(t *testing.T) {
 
 func TestHealthHandler_UptimeCalculation(t *testing.T) {
 	storage := &mockStorage{}
-	handler := NewHealthHandler(storage, "1.0.0")
+	handler := NewHealthHandler(storage, "1.0.0", logrus.New())
 
 	// Wait a small amount of time to ensure uptime is measurable
 	time.Sleep(10 * time.Millisecond)
@@ -309,7 +310,7 @@ func TestHealthHandler_MultipleHealthChecks(t *testing.T) {
 	// This test verifies that the health check system can handle multiple checks
 	// Currently only storage is implemented, but the structure supports more
 	storage := &mockStorage{}
-	handler := NewHealthHandler(storage, "1.0.0")
+	handler := NewHealthHandler(storage, "1.0.0", logrus.New())
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rr := httptest.NewRecorder()

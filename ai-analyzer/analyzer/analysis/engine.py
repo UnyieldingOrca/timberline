@@ -103,10 +103,6 @@ class AnalysisEngine:
             error_count = len([log for log in logs if log.level in ["ERROR", "CRITICAL"]])
             warning_count = len([log for log in logs if log.level == "WARNING"])
 
-            # Step 5: Generate health score
-            logger.info("Step 5: Calculating health score")
-            health_score = self.generate_health_score(logs, analyzed_clusters)
-
             # Step 6: Generate LLM summary
             logger.info("Step 6: Generating LLM summary")
             top_clusters = [c for c in analyzed_clusters if c.is_actionable()][:10]
@@ -121,7 +117,6 @@ class AnalysisEngine:
                 error_count=error_count,
                 warning_count=warning_count,
                 analyzed_clusters=analyzed_clusters,
-                health_score=health_score,
                 llm_summary=llm_summary,
                 execution_time=time.time() - start_time
             )
@@ -136,7 +131,7 @@ class AnalysisEngine:
                 # Don't fail the entire analysis for report issues
 
             logger.info(f"Daily analysis completed in {result.execution_time:.2f}s - "
-                       f"{len(logs)} logs, {len(clusters)} clusters, health: {health_score:.2f}")
+                       f"{len(logs)} logs, {len(clusters)} clusters")
             return result
 
         except MilvusConnectionError as e:
@@ -197,37 +192,4 @@ class AnalysisEngine:
         logger.info(f"Processed clusters: {len(actionable_clusters)} actionable issues found")
         return clusters
 
-
-    def generate_health_score(self, logs: List[LogRecord], analyzed_clusters: List[LogCluster]) -> float:
-        """Generate system health score (0-1 scale)"""
-        if not logs:
-            return 1.0
-
-        # Calculate basic error/warning ratios
-        error_count = len([log for log in logs if log.level in ["ERROR", "CRITICAL"]])
-        warning_count = len([log for log in logs if log.level == "WARNING"])
-        total_logs = len(logs)
-
-        error_ratio = error_count / total_logs if total_logs > 0 else 0
-        warning_ratio = warning_count / total_logs if total_logs > 0 else 0
-
-        # Base health calculation (weighted by severity)
-        base_health = 1.0 - (error_ratio * 0.7 + warning_ratio * 0.3)
-
-        # Factor in LLM severity analysis if available
-        if analyzed_clusters:
-            cluster_scores = [c.severity_score for c in analyzed_clusters if c.severity is not None]
-            if cluster_scores:
-                avg_severity = sum(cluster_scores) / len(cluster_scores)
-                # Normalize severity impact (1-10 scale to 0-1)
-                severity_impact = (avg_severity - 1) / 9
-                # Apply severity impact with diminishing returns
-                base_health *= (1 - severity_impact * 0.4)
-
-        # Ensure score is within bounds
-        health_score = max(0.0, min(1.0, base_health))
-
-        logger.info(f"Health score calculation: {error_count} errors, {warning_count} warnings, "
-                   f"score: {health_score:.3f}")
-        return health_score
 

@@ -32,18 +32,79 @@ class LogGenerator:
         """Generate application error logs."""
         log_file = self.output_dir / "app-errors.log"
 
-        logs = [
-            "2024-01-15T10:30:45.123Z ERROR [auth-service] Failed to authenticate user: invalid credentials",
-            "2024-01-15T10:31:02.456Z WARN [auth-service] Rate limit approaching for IP 192.168.1.100",
-            "2024-01-15T10:31:15.789Z FATAL [database] Connection pool exhausted, cannot serve requests",
-            "2024-01-15T10:31:30.012Z ERROR [payment-service] Payment processing failed: insufficient funds",
-            "2024-01-15T10:32:45.345Z ERROR [order-service] Order validation failed: invalid product ID",
-            "2024-01-15T10:33:00.678Z WARN [cache-service] Cache miss rate exceeding threshold: 85%",
-            "2024-01-15T10:33:15.901Z ERROR [notification-service] Failed to send email: SMTP timeout"
+        base_time = datetime.now(UTC)
+        services = ["auth-service", "database", "payment-service", "order-service", "cache-service", "notification-service", "api-gateway", "user-service"]
+        levels = ["ERROR", "WARN", "FATAL", "INFO"]
+
+        error_templates = [
+            ("auth-service", "Failed to authenticate user: invalid credentials"),
+            ("auth-service", "Rate limit approaching for IP {ip}"),
+            ("database", "Connection pool exhausted, cannot serve requests"),
+            ("payment-service", "Payment processing failed: {reason}"),
+            ("order-service", "Order validation failed: {reason}"),
+            ("cache-service", "Cache miss rate exceeding threshold: {percent}%"),
+            ("notification-service", "Failed to send email: {reason}"),
+            ("api-gateway", "Request timeout after {timeout}ms"),
+            ("user-service", "User lookup failed for ID: {user_id}"),
+            ("database", "Query execution time exceeded {timeout}ms"),
+            ("payment-service", "Transaction declined: {reason}"),
+            ("auth-service", "Token validation failed: {reason}"),
+            ("cache-service", "Redis connection lost: {reason}"),
+            ("order-service", "Inventory check failed for product {product_id}"),
+            ("notification-service", "Push notification delivery failed: {reason}")
         ]
 
+        payment_reasons = ["insufficient funds", "expired card", "invalid CVV", "card declined", "fraud detected"]
+        order_reasons = ["invalid product ID", "out of stock", "invalid quantity", "price mismatch"]
+        timeout_reasons = ["connection timeout", "read timeout", "gateway timeout", "upstream timeout"]
+        auth_reasons = ["expired token", "malformed token", "signature mismatch", "insufficient privileges"]
+
+        timestamp_formats = [
+            lambda t: t.strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + "Z",  # ISO with milliseconds
+            lambda t: t.strftime("%Y-%m-%dT%H:%M:%SZ"),                 # ISO without milliseconds
+            lambda t: t.strftime("%Y-%m-%d %H:%M:%S"),                  # Simple datetime
+            lambda t: t.strftime("%b %d %H:%M:%S"),                     # Syslog format
+            lambda t: t.strftime("%Y/%m/%d %H:%M:%S.%f")[:-3],          # Slash format with ms
+            lambda t: str(int(t.timestamp())),                          # Unix timestamp
+            lambda t: str(int(t.timestamp() * 1000)),                   # Unix timestamp ms
+            lambda t: t.strftime("%d-%m-%Y %H:%M:%S"),                  # European format
+        ]
+
+        # Choose one timestamp format for this entire log file (consistency within stream)
+        chosen_timestamp_format = random.choice(timestamp_formats)
+        use_timestamps = random.random() > 0.15  # 15% chance this entire file has no timestamps
+
+        logs = []
+        for i in range(70):  # 10x the original 7 logs
+            timestamp = base_time + timedelta(seconds=random.randint(0, 3600), microseconds=random.randint(0, 999999))
+
+            service, template = random.choice(error_templates)
+            level = random.choice(levels) if random.random() > 0.3 else ("ERROR" if "failed" in template.lower() or "timeout" in template.lower() else "WARN")
+
+            # Fill in template variables
+            message = template.format(
+                ip=f"192.168.{random.randint(1,255)}.{random.randint(1,255)}",
+                reason=random.choice(payment_reasons + order_reasons + timeout_reasons + auth_reasons),
+                percent=random.randint(80, 95),
+                timeout=random.randint(1000, 10000),
+                user_id=f"usr-{random.randint(1000, 9999)}",
+                product_id=f"prod-{random.randint(100, 999)}"
+            )
+
+            # Use consistent timestamp format for this file
+            if use_timestamps:
+                timestamp_str = chosen_timestamp_format(timestamp)
+                log_line = f"{timestamp_str} {level} [{service}] {message}"
+            else:
+                log_line = f"{level} [{service}] {message}"
+
+            logs.append((timestamp, log_line))
+
+        logs.sort()  # Sort by timestamp
+
         with open(log_file, 'w') as f:
-            f.write('\n'.join(logs) + '\n')
+            for _, log_line in logs:
+                f.write(log_line + '\n')
 
         return log_file
 
@@ -51,53 +112,98 @@ class LogGenerator:
         """Generate JSON structured logs."""
         log_file = self.output_dir / "structured-logs.log"
 
-        logs = [
-            {
-                "timestamp": "2024-01-15T10:30:45Z",
-                "level": "ERROR",
-                "service": "api-gateway",
-                "message": "Request timeout",
-                "request_id": "req-123",
-                "duration": 5000
-            },
-            {
-                "timestamp": "2024-01-15T10:31:00Z",
-                "level": "WARN",
-                "service": "user-service",
-                "message": "Slow query detected",
-                "query_duration": 2500,
-                "table": "users"
-            },
-            {
-                "timestamp": "2024-01-15T10:31:15Z",
-                "level": "FATAL",
-                "service": "payment-gateway",
-                "message": "Circuit breaker opened",
-                "error_rate": 0.85,
-                "threshold": 0.8
-            },
-            {
-                "timestamp": "2024-01-15T10:31:30Z",
-                "level": "ERROR",
-                "service": "inventory",
-                "message": "Stock level critical",
-                "product_id": "prod-456",
-                "current_stock": 2,
-                "threshold": 10
-            },
-            {
-                "timestamp": "2024-01-15T10:31:45Z",
-                "level": "INFO",
-                "service": "analytics",
-                "message": "Report generated",
-                "report_type": "daily_sales",
-                "records_processed": 15000
-            }
+        base_time = datetime.now(UTC)
+        services = ["api-gateway", "user-service", "payment-gateway", "inventory", "analytics", "auth-service", "notification", "order-processing"]
+        levels = ["ERROR", "WARN", "FATAL", "INFO", "DEBUG"]
+        tables = ["users", "orders", "products", "payments", "sessions", "inventory", "analytics"]
+        report_types = ["daily_sales", "weekly_summary", "monthly_report", "user_activity", "inventory_status"]
+
+        timestamp_formats = [
+            lambda t: t.strftime("%Y-%m-%dT%H:%M:%SZ"),                 # ISO format
+            lambda t: t.strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + "Z",   # ISO with milliseconds
+            lambda t: t.isoformat() + "Z",                              # Python isoformat
+            lambda t: str(int(t.timestamp())),                          # Unix timestamp
+            lambda t: str(int(t.timestamp() * 1000)),                   # Unix timestamp ms
+            lambda t: t.strftime("%Y-%m-%d %H:%M:%S"),                  # Simple format
         ]
 
+        # Choose consistent timestamp handling for this entire JSON log file
+        timestamp_mode = random.choice(["format", "none", "null"])
+        if timestamp_mode == "format":
+            chosen_timestamp_format = random.choice(timestamp_formats)
+
+        logs = []
+        for i in range(50):  # 10x the original 5 logs
+            timestamp = base_time + timedelta(seconds=random.randint(0, 3600), microseconds=random.randint(0, 999999))
+
+            service = random.choice(services)
+            level = random.choice(levels)
+
+            log_entry = {
+                "level": level,
+                "service": service,
+                "request_id": f"req-{random.randint(1000, 9999)}-{random.randint(100, 999)}"
+            }
+
+            # Apply consistent timestamp handling for entire file
+            if timestamp_mode == "format":
+                log_entry["timestamp"] = chosen_timestamp_format(timestamp)
+            elif timestamp_mode == "null":
+                log_entry["timestamp"] = None
+            # If "none", don't add timestamp field at all
+
+            # Add service-specific fields based on service type
+            if service == "api-gateway":
+                log_entry.update({
+                    "message": random.choice(["Request timeout", "Rate limit exceeded", "Invalid route", "Upstream service down"]),
+                    "duration": random.randint(100, 10000),
+                    "status_code": random.choice([200, 400, 404, 500, 502, 503]),
+                    "client_ip": f"192.168.{random.randint(1,255)}.{random.randint(1,255)}"
+                })
+            elif service == "user-service":
+                log_entry.update({
+                    "message": random.choice(["Slow query detected", "User authentication failed", "Profile update successful", "Password reset requested"]),
+                    "query_duration": random.randint(100, 5000),
+                    "table": random.choice(tables),
+                    "user_id": f"user-{random.randint(1000, 9999)}"
+                })
+            elif service == "payment-gateway":
+                log_entry.update({
+                    "message": random.choice(["Circuit breaker opened", "Payment processed", "Transaction failed", "Fraud detected"]),
+                    "error_rate": round(random.uniform(0.1, 0.9), 2),
+                    "threshold": round(random.uniform(0.7, 0.9), 2),
+                    "transaction_id": f"txn-{random.randint(10000, 99999)}"
+                })
+            elif service == "inventory":
+                log_entry.update({
+                    "message": random.choice(["Stock level critical", "Inventory updated", "Reorder point reached", "Stock audit completed"]),
+                    "product_id": f"prod-{random.randint(100, 999)}",
+                    "current_stock": random.randint(0, 100),
+                    "threshold": random.randint(5, 20)
+                })
+            elif service == "analytics":
+                log_entry.update({
+                    "message": random.choice(["Report generated", "Data processing completed", "Export finished", "Metrics calculated"]),
+                    "report_type": random.choice(report_types),
+                    "records_processed": random.randint(1000, 50000),
+                    "processing_time": random.randint(10, 300)
+                })
+            else:
+                # Generic fields for other services
+                log_entry.update({
+                    "message": random.choice(["Operation completed", "Error occurred", "Warning condition", "Debug info", "Service started"]),
+                    "correlation_id": f"corr-{random.randint(1000, 9999)}",
+                    "execution_time": random.randint(10, 1000)
+                })
+
+            logs.append((timestamp, log_entry))
+
+        # Sort by timestamp
+        logs.sort(key=lambda x: x[0])
+
         with open(log_file, 'w') as f:
-            for log in logs:
-                f.write(json.dumps(log) + '\n')
+            for _, log_entry in logs:
+                f.write(json.dumps(log_entry) + '\n')
 
         return log_file
 
@@ -105,16 +211,67 @@ class LogGenerator:
         """Generate Kubernetes-style logs."""
         log_file = self.output_dir / "k8s-app.log"
 
-        logs = [
-            "I0115 10:30:45.123456       1 main.go:45] Starting application server on port 8080",
-            "E0115 10:31:00.234567       1 handler.go:123] HTTP 500: Internal server error processing request /api/users",
-            "W0115 10:31:15.345678       1 metrics.go:67] Metrics endpoint /metrics responding slowly",
-            "E0115 10:31:30.456789       1 database.go:234] Database query failed: connection refused",
-            "F0115 10:31:45.567890       1 server.go:89] Failed to bind to port 8080: address already in use"
+        base_time = datetime.now(UTC)
+        files = ["main.go", "handler.go", "metrics.go", "database.go", "server.go", "auth.go", "cache.go", "queue.go"]
+        levels = ["I", "E", "W", "F"]
+
+        message_templates = [
+            ("I", "Starting application server on port {port}"),
+            ("I", "Successfully connected to database"),
+            ("I", "Cache initialized with {size} MB"),
+            ("I", "Worker pool started with {workers} workers"),
+            ("E", "HTTP {status}: {error} processing request {endpoint}"),
+            ("E", "Database query failed: {reason}"),
+            ("E", "Authentication failed for user {user_id}"),
+            ("E", "Cache operation failed: {reason}"),
+            ("W", "Metrics endpoint {endpoint} responding slowly"),
+            ("W", "High memory usage detected: {percent}%"),
+            ("W", "Connection pool near capacity: {current}/{max}"),
+            ("W", "Rate limit approaching for endpoint {endpoint}"),
+            ("F", "Failed to bind to port {port}: {reason}"),
+            ("F", "Database connection lost: {reason}"),
+            ("F", "Critical system error: {reason}"),
+            ("I", "Health check passed for service {service}"),
+            ("I", "Configuration reloaded successfully"),
+            ("E", "Queue processing failed: {reason}"),
+            ("W", "Disk space low: {percent}% remaining")
         ]
 
+        logs = []
+        for i in range(50):  # 10x the original 5 logs
+            timestamp = base_time + timedelta(seconds=random.randint(0, 3600), microseconds=random.randint(0, 999999))
+            day_str = timestamp.strftime("%m%d")
+            time_str = timestamp.strftime("%H:%M:%S.%f")
+
+            level, template = random.choice(message_templates)
+            file_name = random.choice(files)
+            line_num = random.randint(10, 500)
+
+            # Fill in template variables
+            message = template.format(
+                port=random.choice([8080, 8081, 8082, 9000, 9090]),
+                status=random.choice([400, 401, 403, 404, 500, 502, 503]),
+                error=random.choice(["Internal server error", "Bad request", "Unauthorized", "Not found", "Service unavailable"]),
+                endpoint=random.choice(["/api/users", "/api/orders", "/api/health", "/metrics", "/api/auth", "/api/payments"]),
+                reason=random.choice(["connection refused", "timeout", "invalid credentials", "resource exhausted", "permission denied"]),
+                user_id=f"user-{random.randint(1000, 9999)}",
+                percent=random.randint(75, 95),
+                size=random.randint(128, 1024),
+                workers=random.randint(4, 32),
+                current=random.randint(80, 95),
+                max=100,
+                service=random.choice(["auth", "database", "cache", "queue", "metrics"])
+            )
+
+            log_line = f"{level}{day_str} {time_str}       1 {file_name}:{line_num}] {message}"
+            logs.append((timestamp, log_line))
+
+        # Sort by timestamp
+        logs.sort(key=lambda x: x[0])
+
         with open(log_file, 'w') as f:
-            f.write('\n'.join(logs) + '\n')
+            for _, log_line in logs:
+                f.write(log_line + '\n')
 
         return log_file
 
@@ -122,38 +279,204 @@ class LogGenerator:
         """Generate mixed format logs with various severity levels."""
         log_file = self.output_dir / "mixed-format.log"
 
-        logs = [
-            "Jan 15 10:30:45 host01 app[1234]: INFO: Application started successfully",
-            "Jan 15 10:31:00 host01 app[1234]: WARN: Configuration file not found, using defaults",
-            "Jan 15 10:31:15 host01 app[1234]: ERROR: Failed to connect to external service",
-            "Jan 15 10:31:30 host01 app[1234]: DEBUG: Processing request ID: abc123",
-            "2024-01-15T10:32:00Z [ERROR] Database connection lost, retrying...",
-            "[FATAL] 2024-01-15 10:32:15: Critical system failure detected",
-            "ERROR: 2024-01-15T10:32:30.000Z - Memory usage exceeding limits",
-            "WARN 10:32:45 - Disk space running low: 5% remaining"
+        base_time = datetime.now(UTC)
+        hosts = ["host01", "host02", "host03", "web-server", "db-server", "cache-node"]
+        apps = ["app", "nginx", "postgres", "redis", "worker", "scheduler"]
+        levels = ["INFO", "WARN", "ERROR", "DEBUG", "FATAL"]
+
+        message_templates = [
+            "Application started successfully",
+            "Configuration file not found, using defaults",
+            "Failed to connect to external service",
+            "Processing request ID: {request_id}",
+            "Database connection lost, retrying...",
+            "Critical system failure detected",
+            "Memory usage exceeding limits: {percent}%",
+            "Disk space running low: {percent}% remaining",
+            "Authentication token expired",
+            "Service health check failed",
+            "Queue processing delayed by {delay}ms",
+            "Cache hit ratio dropped to {percent}%",
+            "Network timeout connecting to {service}",
+            "SSL certificate expires in {days} days",
+            "Load average high: {load}",
+            "File system error on {partition}",
+            "Backup completed successfully ({size}GB)",
+            "User session expired for {user_id}",
+            "Rate limit exceeded for {endpoint}"
         ]
 
+        logs = []
+        for i in range(80):  # 10x the original 8 logs
+            timestamp = base_time + timedelta(seconds=random.randint(0, 3600))
+            host = random.choice(hosts)
+            app = random.choice(apps)
+            pid = random.randint(1000, 9999)
+            level = random.choice(levels)
+            message = random.choice(message_templates)
+
+            # Fill in template variables
+            message = message.format(
+                request_id=''.join(random.choices('0123456789abcdef', k=8)),
+                percent=random.randint(5, 95),
+                delay=random.randint(100, 5000),
+                service=random.choice(["auth-service", "payment-api", "user-db", "cache-cluster"]),
+                days=random.randint(1, 90),
+                load=f"{random.uniform(1.0, 8.0):.2f}",
+                partition=random.choice(["/var/log", "/tmp", "/data", "/home"]),
+                size=f"{random.uniform(0.5, 50.0):.1f}",
+                user_id=f"usr-{random.randint(1000, 9999)}",
+                endpoint=random.choice(["/api/users", "/api/orders", "/health", "/metrics"])
+            )
+
+        # Choose one consistent format for this entire mixed format log file
+        format_choice = random.choice([1, 2, 3, 4, 5, 6])
+
+        # Various timestamp formats - choose one for consistency
+        timestamp_formats_mixed = [
+            lambda t: t.strftime("%b %d %H:%M:%S"),                         # Syslog
+            lambda t: t.strftime("%Y-%m-%dT%H:%M:%SZ"),                     # ISO
+            lambda t: t.strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + "Z",       # ISO with ms
+            lambda t: t.strftime("%Y/%m/%d %H:%M:%S"),                      # Slash format
+            lambda t: t.strftime("%d.%m.%Y %H:%M:%S"),                      # German format
+            lambda t: str(int(t.timestamp())),                              # Unix timestamp
+            lambda t: t.strftime("%Y-%m-%d %H:%M:%S,%f")[:-3],              # Python logging
+            lambda t: t.strftime("%m/%d/%Y %I:%M:%S %p"),                   # US format with AM/PM
+        ]
+
+        chosen_timestamp_format_mixed = random.choice(timestamp_formats_mixed)
+
+        for i in range(80):  # 10x the original 8 logs
+            timestamp = base_time + timedelta(seconds=random.randint(0, 3600))
+            host = random.choice(hosts)
+            app = random.choice(apps)
+            pid = random.randint(1000, 9999)
+            level = random.choice(levels)
+            message = random.choice(message_templates)
+
+            # Fill in template variables
+            message = message.format(
+                request_id=''.join(random.choices('0123456789abcdef', k=8)),
+                percent=random.randint(5, 95),
+                delay=random.randint(100, 5000),
+                service=random.choice(["auth-service", "payment-api", "user-db", "cache-cluster"]),
+                days=random.randint(1, 90),
+                load=f"{random.uniform(1.0, 8.0):.2f}",
+                partition=random.choice(["/var/log", "/tmp", "/data", "/home"]),
+                size=f"{random.uniform(0.5, 50.0):.1f}",
+                user_id=f"usr-{random.randint(1000, 9999)}",
+                endpoint=random.choice(["/api/users", "/api/orders", "/health", "/metrics"])
+            )
+
+            # Use consistent format for entire file
+            if format_choice == 1:  # Syslog format
+                time_str = chosen_timestamp_format_mixed(timestamp)
+                log_line = f"{time_str} {host} {app}[{pid}]: {level}: {message}"
+            elif format_choice == 2:  # ISO timestamp with brackets
+                time_str = chosen_timestamp_format_mixed(timestamp)
+                log_line = f"{time_str} [{level}] {message}"
+            elif format_choice == 3:  # Level first format
+                time_str = chosen_timestamp_format_mixed(timestamp)
+                log_line = f"[{level}] {time_str}: {message}"
+            elif format_choice == 4:  # Simple format
+                time_str = chosen_timestamp_format_mixed(timestamp)
+                log_line = f"{level}: {time_str} - {message}"
+            elif format_choice == 5:  # No timestamp format
+                log_line = f"{level} {host} {app}: {message}"
+            else:  # Minimal format - just level and message
+                log_line = f"[{level}] {message}"
+
+            logs.append((timestamp, log_line))
+
+        # Sort by timestamp
+        logs.sort(key=lambda x: x[0])
+
         with open(log_file, 'w') as f:
-            f.write('\n'.join(logs) + '\n')
+            for _, log_line in logs:
+                f.write(log_line + '\n')
 
         return log_file
 
-    def generate_high_volume_logs(self, count: int = 1000) -> Path:
+    def generate_high_volume_logs(self, count: int = 10000) -> Path:
         """Generate high-volume logs for performance testing."""
         log_file = self.output_dir / "high-volume.log"
 
-        levels = ["ERROR", "WARN", "INFO", "DEBUG"]
-        services = [f"load-test-service-{i}" for i in range(10)]
+        levels = ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"]
+        services = [f"load-test-service-{i}" for i in range(20)]  # More services
+        base_time = datetime.now(UTC)
+
+        message_templates = [
+            "Processing request batch {batch_id}",
+            "Database query executed in {duration}ms",
+            "Cache operation: {operation} for key {key}",
+            "Authentication check for user {user_id}",
+            "Load test message {msg_id} with random data: {data}",
+            "Network request to {endpoint} completed",
+            "Memory allocation: {size}MB for operation {op_id}",
+            "Thread pool status: {active}/{total} active",
+            "Queue processing: {processed}/{total} messages",
+            "Heartbeat from worker {worker_id}",
+            "Metrics collection interval {interval}s",
+            "Configuration reload triggered",
+            "Health check probe: {status}",
+            "Session management: {operation} session {session_id}",
+            "File I/O operation: {operation} {filename}"
+        ]
+
+        timestamp_formats_high_volume = [
+            lambda t: t.strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + "Z",   # ISO with ms
+            lambda t: t.strftime("%Y-%m-%dT%H:%M:%SZ"),                 # ISO
+            lambda t: t.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],          # Space separated with ms
+            lambda t: str(int(t.timestamp() * 1000)),                   # Unix timestamp ms
+            lambda t: t.strftime("%Y/%m/%d %H:%M:%S"),                  # Slash format
+            lambda t: t.strftime("%b %d %H:%M:%S.%f")[:-3],             # Syslog with ms
+        ]
+
+        # Choose consistent timestamp format for entire high-volume log file
+        use_timestamps_hv = random.random() > 0.10  # 10% chance entire file has no timestamps
+        if use_timestamps_hv:
+            chosen_timestamp_format_hv = random.choice(timestamp_formats_high_volume)
 
         with open(log_file, 'w') as f:
             for i in range(count):
-                timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + "Z"
+                # Spread timestamps over 1 hour with microsecond precision
+                offset_seconds = (i * 3600) // count
+                offset_microseconds = random.randint(0, 999999)
+                timestamp = base_time + timedelta(seconds=offset_seconds, microseconds=offset_microseconds)
+
                 level = random.choice(levels)
                 service = random.choice(services)
-                random_data = ''.join(random.choices('0123456789abcdef', k=32))
-                message = f"Load test message {i+1} with random data: {random_data}"
+                template = random.choice(message_templates)
 
-                log_line = f"{timestamp} {level} [{service}] {message}"
+                # Fill in template variables
+                message = template.format(
+                    batch_id=f"batch-{random.randint(1000, 9999)}",
+                    duration=random.randint(10, 2000),
+                    operation=random.choice(["GET", "SET", "DEL", "UPDATE"]),
+                    key=f"key-{random.randint(1000, 9999)}",
+                    user_id=f"usr-{random.randint(1000, 9999)}",
+                    msg_id=i+1,
+                    data=''.join(random.choices('0123456789abcdef', k=16)),
+                    endpoint=f"/api/v{random.randint(1,3)}/{random.choice(['users', 'orders', 'products'])}",
+                    size=random.randint(1, 100),
+                    op_id=f"op-{random.randint(100, 999)}",
+                    active=random.randint(1, 50),
+                    total=50,
+                    processed=random.randint(0, 1000),
+                    worker_id=f"worker-{random.randint(1, 10)}",
+                    interval=random.randint(5, 60),
+                    status=random.choice(["OK", "WARN", "ERROR"]),
+                    session_id=f"sess-{random.randint(10000, 99999)}",
+                    filename=f"data-{random.randint(1000, 9999)}.{random.choice(['log', 'tmp', 'dat'])}"
+                )
+
+                # Use consistent timestamp handling for entire file
+                if use_timestamps_hv:
+                    timestamp_str = chosen_timestamp_format_hv(timestamp)
+                    log_line = f"{timestamp_str} {level} [{service}] {message}"
+                else:
+                    log_line = f"{level} [{service}] {message}"
+
                 f.write(log_line + '\n')
 
         return log_file

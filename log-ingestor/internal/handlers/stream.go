@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -13,11 +14,54 @@ import (
 	"github.com/timberline/log-ingestor/internal/storage"
 )
 
+// FlexibleTimestamp can unmarshal both string and numeric timestamps
+type FlexibleTimestamp int64
+
+func (ft *FlexibleTimestamp) UnmarshalJSON(data []byte) error {
+	// Try to unmarshal as int64 first
+	var intVal int64
+	if err := json.Unmarshal(data, &intVal); err == nil {
+		*ft = FlexibleTimestamp(intVal)
+		return nil
+	}
+
+	// Try to unmarshal as string and parse
+	var strVal string
+	if err := json.Unmarshal(data, &strVal); err == nil {
+		// Try parsing as ISO 8601 timestamp
+		if t, err := time.Parse(time.RFC3339, strVal); err == nil {
+			*ft = FlexibleTimestamp(t.Unix() * 1000) // Convert to milliseconds
+			return nil
+		}
+		// Try parsing as other common formats
+		formats := []string{
+			"2006-01-02T15:04:05Z",
+			"2006-01-02 15:04:05",
+			"2006/01/02 15:04:05",
+		}
+		for _, format := range formats {
+			if t, err := time.Parse(format, strVal); err == nil {
+				*ft = FlexibleTimestamp(t.Unix() * 1000)
+				return nil
+			}
+		}
+		// Try parsing as numeric string
+		if intVal, err := strconv.ParseInt(strVal, 10, 64); err == nil {
+			*ft = FlexibleTimestamp(intVal)
+			return nil
+		}
+	}
+
+	// If all else fails, set to current time
+	*ft = FlexibleTimestamp(time.Now().Unix() * 1000)
+	return nil
+}
+
 // FluentBitLogEntry represents the standard format that Fluent Bit sends
 type FluentBitLogEntry struct {
 	Date       float64                `json:"date,omitempty"`       // Unix timestamp with microseconds
-	Timestamp  int64                  `json:"timestamp,omitempty"`  // Alternative timestamp field
-	Log        string                 `json:"log"`                  // The actual log message
+	Timestamp  FlexibleTimestamp      `json:"timestamp,omitempty"`  // Alternative timestamp field (flexible)
+	Log        string                 `json:"log"`                  // The log message content
 	Kubernetes map[string]interface{} `json:"kubernetes,omitempty"` // Kubernetes metadata
 	Source     string                 `json:"source,omitempty"`     // Source identifier
 }
@@ -30,16 +74,18 @@ func (fb *FluentBitLogEntry) transformToLogEntry() *models.LogEntry {
 		Metadata: fb.Kubernetes,
 	}
 
-	// Handle timestamp - Fluent Bit can send either 'date' (float64) or 'timestamp' (int64)
+	// Handle timestamp - Fluent Bit can send either 'date' (float64) or 'timestamp' (flexible)
 	if fb.Date > 0 {
 		// Convert float64 Unix timestamp (seconds) to int64 milliseconds
 		entry.Timestamp = int64(fb.Date * 1000)
 	} else if fb.Timestamp > 0 {
+		// FlexibleTimestamp is already processed and converted to milliseconds
+		timestamp := int64(fb.Timestamp)
 		// Check if timestamp is in seconds or milliseconds
-		if fb.Timestamp < 1e12 { // Less than year 2001 in milliseconds means it's in seconds
-			entry.Timestamp = fb.Timestamp * 1000
+		if timestamp < 1e12 { // Less than year 2001 in milliseconds means it's in seconds
+			entry.Timestamp = timestamp * 1000
 		} else {
-			entry.Timestamp = fb.Timestamp
+			entry.Timestamp = timestamp
 		}
 	}
 

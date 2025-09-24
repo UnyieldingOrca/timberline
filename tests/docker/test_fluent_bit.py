@@ -9,13 +9,124 @@ import tempfile
 import time
 from datetime import datetime, UTC
 from pathlib import Path
+from typing import List, Dict, Any
 
 import pytest
 import requests
 from pymilvus import connections, Collection
 
 
-# test_logs_dir fixture is now provided by conftest.py
+def connect_to_milvus() -> Collection:
+    """Helper function to connect to Milvus and return the collection."""
+    connections.connect(
+        alias="test",
+        host="localhost",
+        port="19530",
+        timeout=5
+    )
+    collection = Collection("timberline_logs", using="test")
+    collection.load()
+    return collection
+
+
+def disconnect_from_milvus():
+    """Helper function to safely disconnect from Milvus."""
+    try:
+        connections.disconnect("test")
+    except:
+        pass
+
+
+def query_logs_by_timestamp(collection: Collection, timestamp: int, limit: int = 20) -> List[Dict[str, Any]]:
+    """Helper function to query logs by timestamp."""
+    query_expr = f'timestamp >= {timestamp - 1000}'
+    return collection.query(
+        expr=query_expr,
+        output_fields=["message", "timestamp"],
+        limit=limit
+    )
+
+
+def query_logs_by_test_id(collection: Collection, test_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """Helper function to query logs by test ID in message."""
+    query_expr = f'message like "%{test_id}%"'
+    return collection.query(
+        expr=query_expr,
+        output_fields=["message", "timestamp"],
+        limit=limit
+    )
+
+
+def validate_log_matches(results: List[Dict[str, Any]], expected_messages: List[str], test_id: str,
+                        min_success_ratio: float = 0.7) -> int:
+    """
+    Helper function to validate that expected log messages are found in results.
+
+    Args:
+        results: Query results from Milvus
+        expected_messages: List of expected message strings
+        test_id: Test identifier for debugging
+        min_success_ratio: Minimum ratio of messages that must be found (default 0.7)
+
+    Returns:
+        Number of matches found
+
+    Raises:
+        AssertionError: If fewer than min_success_ratio messages are found
+    """
+    found_messages = [result["message"] for result in results]
+
+    matches_found = 0
+    for expected_msg in expected_messages:
+        if any(expected_msg in found_msg for found_msg in found_messages):
+            matches_found += 1
+            print(f"✓ Found log with message: {expected_msg}")
+        else:
+            print(f"✗ Missing log with message: {expected_msg}")
+
+    min_expected = int(len(expected_messages) * min_success_ratio)
+    assert matches_found >= min_expected, \
+        f"Found {matches_found}/{len(expected_messages)} expected logs (minimum {min_expected}). " \
+        f"Test ID: {test_id}. Expected: {expected_messages}. Found: {found_messages}"
+
+    print(f"✓ Successfully verified {matches_found}/{len(expected_messages)} logs")
+    return matches_found
+
+
+def validate_log_count_by_test_id(results: List[Dict[str, Any]], test_id: str, expected_count: int,
+                                 min_success_ratio: float = 0.7) -> int:
+    """
+    Helper function to validate log count by test ID.
+
+    Args:
+        results: Query results from Milvus
+        test_id: Test identifier to count in messages
+        expected_count: Expected number of logs with test_id
+        min_success_ratio: Minimum ratio of logs that must be found (default 0.7)
+
+    Returns:
+        Number of matches found
+
+    Raises:
+        AssertionError: If fewer than min_success_ratio logs are found
+    """
+    found_messages = [result["message"] for result in results]
+    matches_found = len([msg for msg in found_messages if test_id in msg])
+
+    min_expected = int(expected_count * min_success_ratio)
+    assert matches_found >= min_expected, \
+        f"Found {matches_found}/{expected_count} logs with test ID {test_id} (minimum {min_expected}). " \
+        f"Found messages: {found_messages}"
+
+    print(f"✓ Successfully verified {matches_found}/{expected_count} logs with test ID {test_id}")
+    return matches_found
+
+
+def setup_test_logs_dir(test_logs_dir: Path, subdir: str = "fluent-bit-tests") -> Path:
+    """Helper function to setup test logs directory."""
+    test_dir = test_logs_dir.joinpath(subdir)
+    test_dir.mkdir(parents=True, exist_ok=True)
+    return test_dir
 
 
 @pytest.fixture
@@ -43,12 +154,11 @@ def test_fluent_bit_health_endpoint(fluent_bit_health_url, http_retry):
 
 def test_fluent_bit_log_ingestion(test_logs_dir, http_retry, cleanup_milvus_data):
     """Test that Fluent Bit successfully ingests and forwards logs to Milvus."""
-    # Ensure test logs directory exists
-    test_logs_dir.mkdir(parents=True, exist_ok=True)
+    test_logs_dir = setup_test_logs_dir(test_logs_dir)
 
     # Generate unique test log entries
-    timestamp = int(time.time() * 1000)  # Unix timestamp in milliseconds
-    test_id = str(timestamp)  # Use timestamp as unique ID
+    timestamp = int(time.time() * 1000)
+    test_id = str(timestamp)
 
     test_logs = [
         {
@@ -83,62 +193,27 @@ def test_fluent_bit_log_ingestion(test_logs_dir, http_retry, cleanup_milvus_data
     # Wait for Fluent Bit to pick up and process the logs
     time.sleep(3)
 
-    # Connect to Milvus and query for our test logs
+    # Validate logs were stored in Milvus
     try:
-        connections.connect(
-            alias="test",
-            host="localhost",
-            port="19530",
-            timeout=5
-        )
-
-        collection = Collection("timberline_logs", using="test")
-        collection.load()
-
-        # Query for logs with our test timestamp (should be very recent)
-        query_expr = f'timestamp >= {timestamp - 1000}'  # Within 1 second of our test timestamp
-        results = collection.query(
-            expr=query_expr,
-            output_fields=["message", "timestamp"],
-            limit=20
-        )
+        collection = connect_to_milvus()
+        results = query_logs_by_timestamp(collection, timestamp)
 
         print(f"Logs found with our timestamp: {len(results)}")
         if results:
             print("Messages found:", [r["message"] for r in results])
 
-        # Verify that at least some of our test logs were stored
-        found_messages = [result["message"] for result in results]
         expected_messages = [log["message"] for log in test_logs]
-
-        matches_found = 0
-        for expected_msg in expected_messages:
-            if any(expected_msg in found_msg for found_msg in found_messages):
-                matches_found += 1
-
-        # We should find at least one of our test logs
-        assert matches_found > 0, \
-            f"None of our test logs found. Expected: {expected_messages}. Found: {found_messages}"
-
-        print(f"✓ Successfully verified {matches_found}/{len(expected_messages)} test logs stored in Milvus")
+        validate_log_matches(results, expected_messages, test_id, min_success_ratio=0.33)  # At least one log
 
     finally:
-        try:
-            connections.disconnect("test")
-        except:
-            pass
-
-    # Clean up test file
-    test_log_file.unlink(missing_ok=True)
+        disconnect_from_milvus()
 
 
 def test_fluent_bit_json_parsing(test_logs_dir, log_ingestor_metrics_url, http_retry, cleanup_milvus_data):
     """Test that Fluent Bit correctly parses JSON log format."""
-    # Ensure test logs directory exists
-    test_logs_dir.mkdir(parents=True, exist_ok=True)
+    test_logs_dir = setup_test_logs_dir(test_logs_dir)
 
-    # Create a test log with complex JSON structure
-    timestamp = int(time.time() * 1000)  # Unix timestamp in milliseconds
+    timestamp = int(time.time() * 1000)
     test_id = str(timestamp)
 
     complex_log = {
@@ -164,35 +239,259 @@ def test_fluent_bit_json_parsing(test_logs_dir, log_ingestor_metrics_url, http_r
     time.sleep(3)
 
     # Verify log was processed
-    # Connect to Milvus and query for our test logs
     try:
-        connections.connect(
-            alias="test",
-            host="localhost",
-            port="19530",
-            timeout=5
-        )
-
-        collection = Collection("timberline_logs", using="test")
-        collection.load()
-
-        # Query for logs with our test timestamp (should be very recent)
-        query_expr = f'timestamp >= {timestamp - 1000}'  # Within 1 second of our test timestamp
-        results = collection.query(
-            expr=query_expr,
-            output_fields=["message", "timestamp"],
-            limit=20
-        )
+        collection = connect_to_milvus()
+        results = query_logs_by_timestamp(collection, timestamp)
 
         assert len(results) == 1, f"Expected 1 log entry, found {len(results)}"
         assert results[0]["message"] == "Complex JSON test"
         assert results[0]["timestamp"] == timestamp
 
     finally:
-        try:
-            connections.disconnect("test")
-        except:
-            pass
+        disconnect_from_milvus()
 
-    # Clean up
-    test_log_file.unlink(missing_ok=True)
+
+def test_fluent_bit_timestamp_formats(test_logs_dir, http_retry, cleanup_milvus_data):
+    """Test that Fluent Bit correctly handles various timestamp formats."""
+    test_logs_dir = setup_test_logs_dir(test_logs_dir)
+
+    current_time = datetime.now(UTC)
+    base_timestamp = int(current_time.timestamp() * 1000)
+    test_id = str(base_timestamp)
+
+    # Define various timestamp formats that our log generator produces
+    timestamp_test_cases = [
+        {
+            "format_name": "ISO_with_milliseconds",
+            "log_line": f'{current_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]}Z ERROR [timestamp-test] ISO with milliseconds test - {test_id}',
+            "expected_message": f"ISO with milliseconds test - {test_id}"
+        },
+        {
+            "format_name": "ISO_without_milliseconds",
+            "log_line": f'{current_time.strftime("%Y-%m-%dT%H:%M:%S")}Z ERROR [timestamp-test] ISO without milliseconds test - {test_id}',
+            "expected_message": f"ISO without milliseconds test - {test_id}"
+        },
+        {
+            "format_name": "simple_datetime",
+            "log_line": f'{current_time.strftime("%Y-%m-%d %H:%M:%S")} ERROR [timestamp-test] Simple datetime test - {test_id}',
+            "expected_message": f"Simple datetime test - {test_id}"
+        },
+        {
+            "format_name": "syslog_format",
+            "log_line": f'{current_time.strftime("%b %d %H:%M:%S")} ERROR [timestamp-test] Syslog format test - {test_id}',
+            "expected_message": f"Syslog format test - {test_id}"
+        },
+        {
+            "format_name": "slash_format",
+            "log_line": f'{current_time.strftime("%Y/%m/%d %H:%M:%S.%f")[:-3]} ERROR [timestamp-test] Slash format test - {test_id}',
+            "expected_message": f"Slash format test - {test_id}"
+        },
+        {
+            "format_name": "unix_timestamp",
+            "log_line": f'{int(current_time.timestamp())} ERROR [timestamp-test] Unix timestamp test - {test_id}',
+            "expected_message": f"Unix timestamp test - {test_id}"
+        },
+        {
+            "format_name": "unix_timestamp_ms",
+            "log_line": f'{int(current_time.timestamp() * 1000)} ERROR [timestamp-test] Unix timestamp ms test - {test_id}',
+            "expected_message": f"Unix timestamp ms test - {test_id}"
+        },
+        {
+            "format_name": "european_format",
+            "log_line": f'{current_time.strftime("%d-%m-%Y %H:%M:%S")} ERROR [timestamp-test] European format test - {test_id}',
+            "expected_message": f"European format test - {test_id}"
+        },
+        {
+            "format_name": "no_timestamp",
+            "log_line": f'ERROR [timestamp-test] No timestamp test - {test_id}',
+            "expected_message": f"No timestamp test - {test_id}"
+        }
+    ]
+
+    # Write test logs with different timestamp formats
+    test_log_file = test_logs_dir / f"timestamp-formats-test-{test_id}.log"
+    with open(test_log_file, 'w') as f:
+        for test_case in timestamp_test_cases:
+            f.write(test_case["log_line"] + '\n')
+
+    # Wait for Fluent Bit to pick up and process the logs
+    time.sleep(3)
+
+    # Validate logs were processed
+    try:
+        collection = connect_to_milvus()
+        results = query_logs_by_test_id(collection, test_id)
+
+        print(f"Found {len(results)} logs with test ID {test_id}")
+
+        expected_messages = [tc["expected_message"] for tc in timestamp_test_cases]
+        validate_log_matches(results, expected_messages, test_id)
+
+    finally:
+        disconnect_from_milvus()
+
+
+def test_fluent_bit_structured_json_timestamps(test_logs_dir, http_retry, cleanup_milvus_data):
+    """Test that Fluent Bit correctly handles JSON logs with various timestamp formats."""
+    test_logs_dir = setup_test_logs_dir(test_logs_dir)
+
+    current_time = datetime.now(UTC)
+    base_timestamp = int(current_time.timestamp() * 1000)
+    test_id = str(base_timestamp)
+
+    # Application JSON logs that Fluent Bit will put in the 'log' field
+    app_json_logs = [
+        {
+            "timestamp": current_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "level": "INFO",
+            "service": "json-timestamp-test",
+            "message": f"JSON ISO format test - {test_id}",
+            "test_id": test_id
+        },
+        {
+            "timestamp": current_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+            "level": "WARN",
+            "service": "json-timestamp-test",
+            "message": f"JSON ISO with ms test - {test_id}",
+            "test_id": test_id
+        },
+        {
+            "timestamp": int(current_time.timestamp()),
+            "level": "ERROR",
+            "service": "json-timestamp-test",
+            "message": f"JSON Unix timestamp test - {test_id}",
+            "test_id": test_id
+        },
+        {
+            "timestamp": int(current_time.timestamp() * 1000),
+            "level": "DEBUG",
+            "service": "json-timestamp-test",
+            "message": f"JSON Unix timestamp ms test - {test_id}",
+            "test_id": test_id
+        },
+        {
+            "timestamp": current_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "level": "FATAL",
+            "service": "json-timestamp-test",
+            "message": f"JSON simple format test - {test_id}",
+            "test_id": test_id
+        },
+        {
+            "timestamp": None,
+            "level": "INFO",
+            "service": "json-timestamp-test",
+            "message": f"JSON null timestamp test - {test_id}",
+            "test_id": test_id
+        }
+    ]
+
+    # JSON log without timestamp field
+    app_json_no_timestamp = {
+        "level": "WARN",
+        "service": "json-timestamp-test",
+        "message": f"JSON no timestamp field test - {test_id}",
+        "test_id": test_id
+    }
+
+    # Convert to Fluent Bit format (JSON string in log field)
+    json_timestamp_test_cases = []
+    for app_log in app_json_logs:
+        fluent_bit_log = {
+            "date": current_time.timestamp(),
+            "log": json.dumps(app_log),
+            "source": "fluent-bit"
+        }
+        json_timestamp_test_cases.append(fluent_bit_log)
+
+    json_no_timestamp = {
+        "date": current_time.timestamp(),
+        "log": json.dumps(app_json_no_timestamp),
+        "source": "fluent-bit"
+    }
+
+    # Write test logs
+    test_log_file = test_logs_dir / f"json-timestamps-test-{test_id}.log"
+    with open(test_log_file, 'w') as f:
+        for log_entry in json_timestamp_test_cases:
+            f.write(json.dumps(log_entry) + '\n')
+        f.write(json.dumps(json_no_timestamp) + '\n')
+
+    # Wait for processing
+    time.sleep(3)
+
+    # Verify logs were processed
+    try:
+        collection = connect_to_milvus()
+        results = query_logs_by_test_id(collection, test_id)
+
+        print(f"Found {len(results)} JSON timestamp logs with test ID {test_id}")
+
+        expected_count = len(json_timestamp_test_cases) + 1  # +1 for no timestamp field log
+        validate_log_count_by_test_id(results, test_id, expected_count)
+
+    finally:
+        disconnect_from_milvus()
+
+
+def test_fluent_bit_mixed_format_timestamps(test_logs_dir, http_retry, cleanup_milvus_data):
+    """Test that Fluent Bit handles mixed format logs with consistent timestamps within stream."""
+    test_logs_dir = setup_test_logs_dir(test_logs_dir)
+
+    current_time = datetime.now(UTC)
+    base_timestamp = int(current_time.timestamp() * 1000)
+    test_id = str(base_timestamp)
+
+    # Test different mixed log formats that maintain consistency within the stream
+    mixed_format_test_cases = [
+        {
+            "format_name": "syslog_consistent",
+            "logs": [
+                f'{current_time.strftime("%b %d %H:%M:%S")} host01 app[1234]: ERROR: Mixed syslog 1 - {test_id}',
+                f'{current_time.strftime("%b %d %H:%M:%S")} host01 app[1235]: WARN: Mixed syslog 2 - {test_id}',
+                f'{current_time.strftime("%b %d %H:%M:%S")} host02 app[1236]: INFO: Mixed syslog 3 - {test_id}',
+            ]
+        },
+        {
+            "format_name": "iso_bracketed_consistent",
+            "logs": [
+                f'{current_time.strftime("%Y-%m-%dT%H:%M:%SZ")} [ERROR] Mixed ISO bracketed 1 - {test_id}',
+                f'{current_time.strftime("%Y-%m-%dT%H:%M:%SZ")} [WARN] Mixed ISO bracketed 2 - {test_id}',
+                f'{current_time.strftime("%Y-%m-%dT%H:%M:%SZ")} [INFO] Mixed ISO bracketed 3 - {test_id}',
+            ]
+        },
+        {
+            "format_name": "no_timestamp_consistent",
+            "logs": [
+                f'ERROR host01 app: Mixed no timestamp 1 - {test_id}',
+                f'WARN host02 app: Mixed no timestamp 2 - {test_id}',
+                f'INFO host03 app: Mixed no timestamp 3 - {test_id}',
+            ]
+        }
+    ]
+
+    total_expected = sum(len(case["logs"]) for case in mixed_format_test_cases)
+
+    # Write test logs - each format gets its own file to simulate separate streams
+    test_files = []
+    for i, test_case in enumerate(mixed_format_test_cases):
+        test_log_file = test_logs_dir / f"mixed-{test_case['format_name']}-{test_id}-{i}.log"
+        test_files.append(test_log_file)
+
+        with open(test_log_file, 'w') as f:
+            for log_line in test_case["logs"]:
+                f.write(log_line + '\n')
+
+    # Wait for processing
+    time.sleep(3)
+
+    # Verify logs were processed
+    try:
+        collection = connect_to_milvus()
+        results = query_logs_by_test_id(collection, test_id, limit=50)
+
+        print(f"Found {len(results)} mixed format logs with test ID {test_id}")
+
+        validate_log_count_by_test_id(results, test_id, total_expected)
+
+    finally:
+        disconnect_from_milvus()

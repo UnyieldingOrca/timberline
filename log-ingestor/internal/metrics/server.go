@@ -15,7 +15,7 @@ type Server struct {
 	logger *logrus.Logger
 }
 
-func NewServer(port int) *Server {
+func NewServer(port int, logger *logrus.Logger) *Server {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 
@@ -29,7 +29,7 @@ func NewServer(port int) *Server {
 
 	return &Server{
 		server: server,
-		logger: logrus.New(),
+		logger: logger,
 	}
 }
 

@@ -248,7 +248,6 @@ class DailyAnalysisResult:
     error_count: int
     warning_count: int
     analyzed_clusters: List[LogCluster]
-    health_score: float  # 0-1 scale
     llm_summary: str
     execution_time: float
 
@@ -258,8 +257,7 @@ class DailyAnalysisResult:
             raise ValueError("Total logs processed cannot be negative")
         if self.error_count < 0 or self.warning_count < 0:
             raise ValueError("Error/warning counts cannot be negative")
-        if not (0 <= self.health_score <= 1):
-            raise ValueError("Health score must be between 0 and 1")
+
         if self.execution_time < 0:
             raise ValueError("Execution time cannot be negative")
         if not self.llm_summary.strip():
@@ -294,15 +292,6 @@ class DailyAnalysisResult:
         """Get clusters with high or critical severity"""
         return [cluster for cluster in self.analyzed_clusters if cluster.is_high_severity()]
 
-    def get_health_status(self) -> Literal["healthy", "warning", "critical"]:
-        """Get health status based on health score"""
-        if self.health_score >= 0.8:
-            return "healthy"
-        elif self.health_score >= 0.5:
-            return "warning"
-        else:
-            return "critical"
-
     def to_summary_dict(self) -> Dict[str, Any]:
         """Convert to summary dictionary for reporting"""
         return {
@@ -313,8 +302,6 @@ class DailyAnalysisResult:
             'info_count': self.info_count,
             'error_rate': round(self.error_rate, 2),
             'warning_rate': round(self.warning_rate, 2),
-            'health_score': round(self.health_score, 3),
-            'health_status': self.get_health_status(),
             'critical_issues_count': len(self.get_critical_issues()),
             'total_clusters': len(self.analyzed_clusters),
             'top_issues_count': len(self.top_issues),

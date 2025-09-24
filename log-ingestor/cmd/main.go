@@ -33,7 +33,7 @@ func main() {
 	logger.WithField("version", Version).Info("Starting log ingestor service")
 
 	// Initialize embedding service
-	embeddingService := embedding.NewService(cfg.EmbeddingEndpoint, cfg.EmbeddingModel, cfg.EmbeddingDimension)
+	embeddingService := embedding.NewService(cfg.EmbeddingEndpoint, cfg.EmbeddingModel, cfg.EmbeddingDimension, logrus.StandardLogger())
 
 	// Test embedding service connection
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -43,7 +43,7 @@ func main() {
 	cancel()
 
 	// Initialize storage
-	storageClient := storage.NewMilvusClient(cfg.MilvusAddress, embeddingService, cfg.EmbeddingDimension, cfg.SimilarityThreshold, cfg.MinExamplesBeforeExclusion)
+	storageClient := storage.NewMilvusClient(cfg.MilvusAddress, embeddingService, cfg.EmbeddingDimension, cfg.SimilarityThreshold, cfg.MinExamplesBeforeExclusion, logrus.StandardLogger())
 
 	// Connect to storage with retry
 	ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
@@ -65,7 +65,7 @@ func main() {
 
 	// Initialize handlers
 	streamHandler := handlers.NewStreamHandler(storageClient, cfg.BatchSize)
-	healthHandler := handlers.NewHealthHandler(storageClient, Version)
+	healthHandler := handlers.NewHealthHandler(storageClient, Version, logrus.StandardLogger())
 
 	// Setup HTTP router
 	router := mux.NewRouter()
@@ -106,7 +106,7 @@ func main() {
 	}
 
 	// Start metrics server
-	metricsServer := metrics.NewServer(cfg.MetricsPort)
+	metricsServer := metrics.NewServer(cfg.MetricsPort, logrus.StandardLogger())
 	go func() {
 		if err := metricsServer.Start(); err != nil {
 			logger.WithError(err).Error("Metrics server failed")

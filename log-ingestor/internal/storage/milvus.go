@@ -57,12 +57,12 @@ type StorageInterface interface {
 	CreateCollection(ctx context.Context) error
 }
 
-func NewMilvusClient(address string, embeddingService embedding.Interface, embeddingDim int, similarityThreshold float32, minExamplesBeforeExclusion int) *MilvusClient {
+func NewMilvusClient(address string, embeddingService embedding.Interface, embeddingDim int, similarityThreshold float32, minExamplesBeforeExclusion int, logger *logrus.Logger) *MilvusClient {
 	return &MilvusClient{
 		collection:                 "timberline_logs",
 		embeddingDim:               embeddingDim,
 		embeddingService:           embeddingService,
-		logger:                     logrus.New(),
+		logger:                     logger,
 		connected:                  false,
 		similarityThreshold:        similarityThreshold,
 		minExamplesBeforeExclusion: minExamplesBeforeExclusion,

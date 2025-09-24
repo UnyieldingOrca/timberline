@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -17,7 +18,7 @@ func TestNewService(t *testing.T) {
 	model := "test-model"
 	dimension := 512
 
-	service := NewService(endpoint, model, dimension)
+	service := NewService(endpoint, model, dimension, logrus.New())
 
 	assert.Equal(t, endpoint, service.endpoint)
 	assert.Equal(t, model, service.model)
@@ -66,7 +67,7 @@ func TestService_GetEmbeddings_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(server.URL, "test-model", 3)
+	service := NewService(server.URL, "test-model", 3, logrus.New())
 	embeddings, err := service.GetEmbeddings(context.Background(), []string{"hello", "world"})
 
 	require.NoError(t, err)
@@ -99,7 +100,7 @@ func TestService_GetEmbedding_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(server.URL, "test-model", 2)
+	service := NewService(server.URL, "test-model", 2, logrus.New())
 	embedding, err := service.GetEmbedding(context.Background(), "single text")
 
 	require.NoError(t, err)
@@ -107,7 +108,7 @@ func TestService_GetEmbedding_Success(t *testing.T) {
 }
 
 func TestService_GetEmbeddings_EmptyTexts(t *testing.T) {
-	service := NewService("http://test.com", "test-model", 768)
+	service := NewService("http://test.com", "test-model", 768, logrus.New())
 	_, err := service.GetEmbeddings(context.Background(), []string{})
 
 	assert.Error(t, err)
@@ -120,7 +121,7 @@ func TestService_GetEmbeddings_ServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(server.URL, "test-model", 768)
+	service := NewService(server.URL, "test-model", 768, logrus.New())
 	_, err := service.GetEmbeddings(context.Background(), []string{"test"})
 
 	assert.Error(t, err)
@@ -145,7 +146,7 @@ func TestService_GetEmbeddings_WrongDimension(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(server.URL, "test-model", 3) // Expects dimension 3
+	service := NewService(server.URL, "test-model", 3, logrus.New()) // Expects dimension 3
 	_, err := service.GetEmbeddings(context.Background(), []string{"test"})
 
 	assert.Error(t, err)
@@ -171,7 +172,7 @@ func TestService_GetEmbeddings_MismatchedCount(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(server.URL, "test-model", 3)
+	service := NewService(server.URL, "test-model", 3, logrus.New())
 	_, err := service.GetEmbeddings(context.Background(), []string{"text1", "text2"})
 
 	assert.Error(t, err)
@@ -185,7 +186,7 @@ func TestService_GetEmbeddings_Timeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(server.URL, "test-model", 768)
+	service := NewService(server.URL, "test-model", 768, logrus.New())
 	service.SetTimeout(50 * time.Millisecond) // Shorter than server delay
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -213,7 +214,7 @@ func TestService_HealthCheck_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(server.URL, "test-model", 3)
+	service := NewService(server.URL, "test-model", 3, logrus.New())
 	err := service.HealthCheck(context.Background())
 
 	assert.NoError(t, err)
@@ -225,7 +226,7 @@ func TestService_HealthCheck_Failure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(server.URL, "test-model", 768)
+	service := NewService(server.URL, "test-model", 768, logrus.New())
 	err := service.HealthCheck(context.Background())
 
 	assert.Error(t, err)
@@ -233,7 +234,7 @@ func TestService_HealthCheck_Failure(t *testing.T) {
 }
 
 func TestService_SetTimeout(t *testing.T) {
-	service := NewService("http://test.com", "test-model", 768)
+	service := NewService("http://test.com", "test-model", 768, logrus.New())
 	originalTimeout := service.client.Timeout
 
 	newTimeout := 5 * time.Second

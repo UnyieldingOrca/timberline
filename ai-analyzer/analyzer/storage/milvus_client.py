@@ -204,8 +204,8 @@ class MilvusQueryEngine:
         # Apply DBSCAN clustering
         # eps: maximum distance between samples to be considered neighbors
         # min_samples: minimum number of samples in neighborhood for core point
-        eps = 0.3  # Adjust based on your embedding space
-        min_samples = 2  # Minimum cluster size
+        eps = 0.2  # Adjust based on your embedding space
+        min_samples = 1  # Minimum cluster size
 
         dbscan = DBSCAN(
             eps=eps,
@@ -255,6 +255,11 @@ class MilvusQueryEngine:
 
         logger.info(f"DBSCAN clustering created {len(clusters)} clusters "
                    f"(from {len(clusters_dict)} actual clusters + {len(noise_logs)} noise points)")
+
+        for i, cluster in enumerate(clusters):
+            logger.debug(f"Cluster {i+1}: {cluster.count} logs, "
+                         f"Representative Log: {cluster.representative_log.message}, "
+                         f"Level: {cluster.representative_log.level}")
         return clusters
 
 

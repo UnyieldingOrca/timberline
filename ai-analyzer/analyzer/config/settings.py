@@ -15,9 +15,10 @@ def _get_default_settings() -> Dict[str, Any]:
         'analysis_window_hours': int(os.getenv('ANALYSIS_WINDOW_HOURS', '24')),
         'max_logs_per_analysis': int(os.getenv('MAX_LOGS_PER_ANALYSIS', '10000')),
         'cluster_batch_size': int(os.getenv('CLUSTER_BATCH_SIZE', '50')),
-        'llm_endpoint': os.getenv('LLM_ENDPOINT'),
-        'llm_model': os.getenv('LLM_MODEL', 'gpt-4o-mini'),
-        'llm_api_key': os.getenv('LLM_API_KEY'),
+        'openai_provider': os.getenv('OPENAI_PROVIDER', 'openai'),
+        'openai_base_url': os.getenv('OPENAI_BASE_URL'),
+        'openai_model': os.getenv('OPENAI_MODEL', 'gpt-4o-mini'),
+        'openai_api_key': os.getenv('OPENAI_API_KEY'),
         'report_output_dir': os.getenv('REPORT_OUTPUT_DIR', '/app/reports'),
         'webhook_url': os.getenv('WEBHOOK_URL')
     }
@@ -37,10 +38,11 @@ class Settings:
     max_logs_per_analysis: int = field(default_factory=lambda: _get_default_settings()['max_logs_per_analysis'])
     cluster_batch_size: int = field(default_factory=lambda: _get_default_settings()['cluster_batch_size'])
 
-    # LLM Configuration (OpenAI Compatible)
-    llm_endpoint: Optional[str] = field(default_factory=lambda: _get_default_settings()['llm_endpoint'])
-    llm_model: str = field(default_factory=lambda: _get_default_settings()['llm_model'])
-    llm_api_key: Optional[str] = field(default_factory=lambda: _get_default_settings()['llm_api_key'])
+    # OpenAI-Compatible LLM Configuration
+    openai_provider: Literal['openai', 'llamacpp'] = field(default_factory=lambda: _get_default_settings()['openai_provider'])
+    openai_base_url: Optional[str] = field(default_factory=lambda: _get_default_settings()['openai_base_url'])
+    openai_model: str = field(default_factory=lambda: _get_default_settings()['openai_model'])
+    openai_api_key: Optional[str] = field(default_factory=lambda: _get_default_settings()['openai_api_key'])
 
     # Reporting
     report_output_dir: str = field(default_factory=lambda: _get_default_settings()['report_output_dir'])
@@ -66,9 +68,10 @@ class Settings:
             'milvus-host': 'milvus_host',
             'milvus-port': 'milvus_port',
             'milvus-collection': 'milvus_collection',
-            'llm-endpoint': 'llm_endpoint',
-            'llm-model': 'llm_model',
-            'llm-api-key': 'llm_api_key',
+            'openai-provider': 'openai_provider',
+            'openai-base-url': 'openai_base_url',
+            'openai-model': 'openai_model',
+            'openai-api-key': 'openai_api_key',
             'report-output-dir': 'report_output_dir',
             'max-logs': 'max_logs_per_analysis'
         }
@@ -98,9 +101,10 @@ class Settings:
         settings.analysis_window_hours = config_dict.get('analysis_window_hours', defaults['analysis_window_hours'])
         settings.max_logs_per_analysis = config_dict.get('max_logs_per_analysis', defaults['max_logs_per_analysis'])
         settings.cluster_batch_size = config_dict.get('cluster_batch_size', defaults['cluster_batch_size'])
-        settings.llm_endpoint = config_dict.get('llm_endpoint', defaults['llm_endpoint'])
-        settings.llm_model = config_dict.get('llm_model', defaults['llm_model'])
-        settings.llm_api_key = config_dict.get('llm_api_key', defaults['llm_api_key'])
+        settings.openai_provider = config_dict.get('openai_provider', defaults['openai_provider'])
+        settings.openai_base_url = config_dict.get('openai_base_url', defaults['openai_base_url'])
+        settings.openai_model = config_dict.get('openai_model', defaults['openai_model'])
+        settings.openai_api_key = config_dict.get('openai_api_key', defaults['openai_api_key'])
         settings.report_output_dir = config_dict.get('report_output_dir', defaults['report_output_dir'])
         settings.webhook_url = config_dict.get('webhook_url', defaults['webhook_url'])
 
@@ -129,12 +133,15 @@ class Settings:
         if self.cluster_batch_size <= 0:
             raise ValueError("Cluster batch size must be positive")
 
-        # Validate LLM settings
-        if not self.llm_api_key:
-            raise ValueError("LLM_API_KEY is required")
+        # Validate OpenAI LLM settings
+        if self.openai_provider not in ['openai', 'llamacpp']:
+            raise ValueError("OpenAI provider must be 'openai' or 'llamacpp'")
 
-        if not self.llm_model.strip():
-            raise ValueError("LLM model cannot be empty")
+        if self.openai_provider == 'openai' and not self.openai_api_key:
+            raise ValueError("OPENAI_API_KEY is required for OpenAI provider")
+
+        if not self.openai_model.strip():
+            raise ValueError("OpenAI model cannot be empty")
 
         # Validate reporting settings
         if not self.report_output_dir.strip():
@@ -163,9 +170,10 @@ class Settings:
             'analysis_window_hours': self.analysis_window_hours,
             'max_logs_per_analysis': self.max_logs_per_analysis,
             'cluster_batch_size': self.cluster_batch_size,
-            'llm_endpoint': self.llm_endpoint,
-            'llm_model': self.llm_model,
-            'llm_api_key': '***' if self.llm_api_key else None,  # Mask API key
+            'openai_provider': self.openai_provider,
+            'openai_base_url': self.openai_base_url,
+            'openai_model': self.openai_model,
+            'openai_api_key': '***' if self.openai_api_key else None,  # Mask API key
             'report_output_dir': self.report_output_dir,
             'webhook_url': self.webhook_url
         }
@@ -174,5 +182,5 @@ class Settings:
         """Get dictionary with sensitive information removed"""
         config = self.to_dict()
         # Remove sensitive fields
-        config['llm_api_key'] = None
+        config['openai_api_key'] = None
         return config

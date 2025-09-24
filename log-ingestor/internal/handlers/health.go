@@ -18,10 +18,10 @@ type HealthHandler struct {
 	version   string
 }
 
-func NewHealthHandler(storage storage.StorageInterface, version string) *HealthHandler {
+func NewHealthHandler(storage storage.StorageInterface, version string, logger *logrus.Logger) *HealthHandler {
 	return &HealthHandler{
 		storage:   storage,
-		logger:    logrus.New(),
+		logger:    logger,
 		startTime: time.Now(),
 		version:   version,
 	}

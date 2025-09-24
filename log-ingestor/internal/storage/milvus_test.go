@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -36,7 +37,7 @@ func TestNewMilvusClient(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
 	dimension := 768
 
-	client := NewMilvusClient(address, mockEmbedding, dimension, 0.95, 3)
+	client := NewMilvusClient(address, mockEmbedding, dimension, 0.95, 3, logrus.New())
 
 	assert.NotNil(t, client)
 	assert.Equal(t, "timberline_logs", client.collection)
@@ -50,7 +51,7 @@ func TestNewMilvusClient(t *testing.T) {
 
 func TestMilvusClient_StoreLog_ValidationErrors(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95, 3)
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95, 3, logrus.New())
 	ctx := context.Background()
 
 	tests := []struct {
@@ -94,7 +95,7 @@ func TestMilvusClient_StoreLog_ValidationErrors(t *testing.T) {
 
 func TestMilvusClient_StoreLog_NotConnected(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95, 3)
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95, 3, logrus.New())
 
 	log := &models.LogEntry{
 		Timestamp: time.Now().UnixMilli(),
@@ -110,7 +111,7 @@ func TestMilvusClient_StoreLog_NotConnected(t *testing.T) {
 
 func TestMilvusClient_StoreLog_EmbeddingFailure(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95, 3)
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95, 3, logrus.New())
 	client.connected = true // Simulate connection
 
 	log := &models.LogEntry{
@@ -133,7 +134,7 @@ func TestMilvusClient_StoreLog_EmbeddingFailure(t *testing.T) {
 
 func TestMilvusClient_HealthCheck_NotConnected(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95, 3)
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95, 3, logrus.New())
 
 	err := client.HealthCheck(context.Background())
 	assert.Error(t, err)
@@ -142,7 +143,7 @@ func TestMilvusClient_HealthCheck_NotConnected(t *testing.T) {
 
 func TestMilvusClient_CreateCollection_NotConnected(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95, 3)
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95, 3, logrus.New())
 
 	err := client.CreateCollection(context.Background())
 	assert.Error(t, err)
@@ -151,7 +152,7 @@ func TestMilvusClient_CreateCollection_NotConnected(t *testing.T) {
 
 func TestMilvusClient_LoadCollection_NotConnected(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95, 3)
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95, 3, logrus.New())
 
 	err := client.LoadCollection(context.Background())
 	assert.Error(t, err)
@@ -160,7 +161,7 @@ func TestMilvusClient_LoadCollection_NotConnected(t *testing.T) {
 
 func TestMilvusClient_Close(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95, 3)
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.95, 3, logrus.New())
 
 	// Test closing when client is nil (should not error)
 	err := client.Close()
@@ -238,7 +239,7 @@ func TestLogEntry_MetadataAsJSON(t *testing.T) {
 
 func TestMilvusClient_DuplicateCountingWorkflow(t *testing.T) {
 	mockEmbedding := &MockEmbeddingService{}
-	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.0, 3) // Disable similarity threshold for this test
+	client := NewMilvusClient("test:19530", mockEmbedding, 768, 0.0, 3, logrus.New()) // Disable similarity threshold for this test
 
 	log := &models.LogEntry{
 		Timestamp: time.Now().UnixMilli(),

@@ -56,7 +56,7 @@ type Service struct {
 }
 
 // NewService creates a new embedding service client
-func NewService(endpoint, model string, dimension int) *Service {
+func NewService(endpoint, model string, dimension int, logger *logrus.Logger) *Service {
 	return &Service{
 		endpoint:  endpoint,
 		model:     model,
@@ -64,7 +64,7 @@ func NewService(endpoint, model string, dimension int) *Service {
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		logger: logrus.New(),
+		logger: logger,
 	}
 }
 

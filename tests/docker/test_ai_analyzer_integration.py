@@ -37,10 +37,6 @@ class TestAIAnalyzerIntegration:
         print(f"  - Kubernetes logs: {k8s_logs}")
         print(f"  - Mixed format logs: {mixed_logs}")
 
-        # Step 3: Wait for collector to process files
-        print("=== Waiting for collector to process log files ===")
-        time.sleep(8)  # Collector flush interval + processing time
-
         # Step 4: Ingest realistic log scenarios via direct API
         print(f"\n=== Ingesting {len(realistic_log_data)} realistic log scenarios ===")
         batch_size = 5

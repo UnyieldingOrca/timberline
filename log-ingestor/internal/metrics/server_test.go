@@ -6,11 +6,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 func TestNewServer(t *testing.T) {
 	port := 9090
-	server := NewServer(port)
+	server := NewServer(port, logrus.New())
 
 	if server == nil {
 		t.Fatal("Expected server to be created, got nil")
@@ -51,7 +53,7 @@ func TestNewServer_DifferentPorts(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		server := NewServer(tt.port)
+		server := NewServer(tt.port, logrus.New())
 		if server.server.Addr != tt.expectedAddr {
 			t.Errorf("Expected address %s, got %s", tt.expectedAddr, server.server.Addr)
 		}
@@ -59,7 +61,7 @@ func TestNewServer_DifferentPorts(t *testing.T) {
 }
 
 func TestServer_MetricsEndpoint(t *testing.T) {
-	server := NewServer(0) // Use port 0 for testing to get a random available port
+	server := NewServer(0, logrus.New()) // Use port 0 for testing to get a random available port
 
 	// Start server in background
 	go func() {
@@ -96,7 +98,7 @@ func TestServer_Start_InvalidPort(t *testing.T) {
 	// Test with port that might already be in use
 	// This test is tricky because we can't guarantee which ports are available
 	// So we'll test the Start method structure instead
-	server := NewServer(9999) // Use a high port number
+	server := NewServer(9999, logrus.New()) // Use a high port number
 
 	// We can't easily test Start() because it blocks, but we can verify
 	// the server configuration
@@ -106,7 +108,7 @@ func TestServer_Start_InvalidPort(t *testing.T) {
 }
 
 func TestServer_Stop(t *testing.T) {
-	server := NewServer(0)
+	server := NewServer(0, logrus.New())
 
 	// Test stopping server without starting it (should not panic)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -119,7 +121,7 @@ func TestServer_Stop(t *testing.T) {
 }
 
 func TestServer_Stop_WithTimeout(t *testing.T) {
-	server := NewServer(0)
+	server := NewServer(0, logrus.New())
 
 	// Test with a very short timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Microsecond)
@@ -131,7 +133,7 @@ func TestServer_Stop_WithTimeout(t *testing.T) {
 }
 
 func TestServer_Stop_WithCanceledContext(t *testing.T) {
-	server := NewServer(0)
+	server := NewServer(0, logrus.New())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -156,7 +158,7 @@ func TestServer_Configuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run("Port"+tt.expectedAddr, func(t *testing.T) {
-			server := NewServer(tt.port)
+			server := NewServer(tt.port, logrus.New())
 
 			if server.server.Addr != tt.expectedAddr {
 				t.Errorf("Expected address %s, got %s", tt.expectedAddr, server.server.Addr)
@@ -175,7 +177,7 @@ func TestServer_Configuration(t *testing.T) {
 }
 
 func TestServer_HandlerSetup(t *testing.T) {
-	server := NewServer(9090)
+	server := NewServer(9090, logrus.New())
 
 	// Verify the handler is a ServeMux
 	mux, ok := server.server.Handler.(*http.ServeMux)
@@ -219,7 +221,7 @@ func TestServer_HandlerSetup(t *testing.T) {
 }
 
 func TestServer_Logger(t *testing.T) {
-	server := NewServer(9090)
+	server := NewServer(9090, logrus.New())
 
 	if server.logger == nil {
 		t.Error("Expected logger to be initialized")
