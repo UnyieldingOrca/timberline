@@ -111,7 +111,7 @@ class MilvusQueryEngine:
 
             results = self._collection.query(
                 expr=expr,
-                output_fields=["id", "timestamp", "message", "source", "metadata", "embedding"],
+                output_fields=["id", "timestamp", "message", "source", "metadata", "embedding", "duplicate_count"],
                 limit=limit
             )
 
@@ -140,7 +140,8 @@ class MilvusQueryEngine:
                         source=result.get("source", ""),
                         metadata=metadata,
                         embedding=result.get("embedding", []),
-                        level=level
+                        level=level,
+                        duplicate_count=result.get("duplicate_count", 1)
                     )
                     logs.append(log)
                 except Exception as e:
@@ -250,14 +251,14 @@ class MilvusQueryEngine:
                 count=1
             ))
 
-        # Sort clusters by count and severity
-        clusters.sort(key=lambda c: (c.representative_log.is_error_or_critical(), c.count), reverse=True)
+        # Sort clusters by total log count (including duplicates) and severity
+        clusters.sort(key=lambda c: (c.representative_log.is_error_or_critical(), c.total_log_count), reverse=True)
 
         logger.info(f"DBSCAN clustering created {len(clusters)} clusters "
                    f"(from {len(clusters_dict)} actual clusters + {len(noise_logs)} noise points)")
 
         for i, cluster in enumerate(clusters):
-            logger.debug(f"Cluster {i+1}: {cluster.count} logs, "
+            logger.debug(f"Cluster {i+1}: {cluster.count} unique logs ({cluster.total_log_count} total including duplicates), "
                          f"Representative Log: {cluster.representative_log.message}, "
                          f"Level: {cluster.representative_log.level}")
         return clusters

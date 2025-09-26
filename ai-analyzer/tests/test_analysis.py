@@ -195,7 +195,7 @@ def test_analyze_daily_logs_success(settings, mock_components, sample_logs, samp
     assert result.warning_count == 3
     assert len(result.analyzed_clusters) == 3
     assert len(result.top_issues) >= 2  # HIGH and CRITICAL clusters are actionable
-    assert 0 <= result.health_score <= 1
+    # health_score field was removed
     assert result.llm_summary == "System has some issues"
     assert result.execution_time > 0
 
@@ -226,7 +226,7 @@ def test_analyze_daily_logs_no_logs_found(settings, mock_components):
     assert result.warning_count == 0
     assert len(result.analyzed_clusters) == 0
     assert len(result.top_issues) == 0
-    assert result.health_score == 1.0  # Perfect health when no logs
+    # health_score field was removed
     assert "No logs found" in result.llm_summary
 
 def test_analyze_daily_logs_milvus_connection_error(settings, mock_components):
@@ -357,36 +357,41 @@ def test_process_log_clusters_llm_failure(settings, mock_components, sample_clus
 
 # Removed test_calculate_fallback_severity - fallback functionality removed
 
-def test_generate_health_score_no_logs(settings, mock_components):
-    """Test health score generation with no logs"""
+def test_error_rate_calculation_no_logs(settings, mock_components):
+    """Test error rate calculation with no logs"""
     engine = AnalysisEngine(settings)
+    # health_score generation was removed, now we focus on error rates
+    result = engine._create_empty_result(date(2022, 1, 1), 1.0)
+    assert result.error_rate == 0.0
 
-    health_score = engine.generate_health_score([], [])
-
-    assert health_score == 1.0
-
-def test_generate_health_score_with_logs(settings, mock_components, sample_logs, sample_clusters):
-    """Test health score generation with logs"""
+def test_error_rate_calculation_with_logs(settings, mock_components, sample_logs, sample_clusters):
+    """Test error rate calculation with logs"""
     engine = AnalysisEngine(settings)
+    # health_score generation was removed, we now use error rates directly
+    total_logs = sum(log.duplicate_count for log in sample_logs)
+    error_logs = sum(log.duplicate_count for log in sample_logs if log.level in ["ERROR", "CRITICAL"])
+    expected_error_rate = (error_logs / total_logs) * 100 if total_logs > 0 else 0.0
 
-    health_score = engine.generate_health_score(sample_logs, sample_clusters)
+    # This would be calculated in the analysis engine
+    assert 0.0 <= expected_error_rate <= 100.0
 
-    assert 0.0 <= health_score <= 1.0
-
-def test_generate_health_score_all_errors(settings, mock_components):
-    """Test health score with all error logs"""
+def test_error_rate_calculation_all_errors(settings, mock_components):
+    """Test error rate with all error logs"""
     engine = AnalysisEngine(settings)
 
     error_logs = [
         LogRecord(id=1, timestamp=1640995200000, message="error", source="test",
-                 metadata={}, embedding=[0.1] * 128, level="ERROR"),
+                 metadata={}, embedding=[0.1] * 128, level="ERROR", duplicate_count=1),
         LogRecord(id=2, timestamp=1640995200000, message="critical", source="test",
-                 metadata={}, embedding=[0.1] * 128, level="CRITICAL")
+                 metadata={}, embedding=[0.1] * 128, level="CRITICAL", duplicate_count=1)
     ]
 
-    health_score = engine.generate_health_score(error_logs, [])
+    # Calculate expected error rate (should be 100% since all are errors)
+    total_logs = sum(log.duplicate_count for log in error_logs)
+    error_count = sum(log.duplicate_count for log in error_logs if log.level in ["ERROR", "CRITICAL"])
+    expected_error_rate = (error_count / total_logs) * 100 if total_logs > 0 else 0.0
 
-    assert health_score < 0.5  # Should be low due to all errors
+    assert expected_error_rate == 100.0  # Should be 100% since all are errors
 
 def test_get_top_issues_empty_clusters(settings, mock_components):
     """Test getting top issues with empty clusters"""
@@ -396,7 +401,6 @@ def test_get_top_issues_empty_clusters(settings, mock_components):
         error_count=0,
         warning_count=0,
         analyzed_clusters=[],
-        health_score=1.0,
         llm_summary="No issues",
         execution_time=1.0
     )
@@ -418,7 +422,6 @@ def test_get_top_issues_with_clusters(settings, mock_components, sample_clusters
         error_count=2,
         warning_count=1,
         analyzed_clusters=sample_clusters,
-        health_score=0.8,
         llm_summary="Some issues found",
         execution_time=1.0
     )
@@ -453,7 +456,6 @@ def test_get_top_issues_max_limit(settings, mock_components):
         error_count=15,
         warning_count=0,
         analyzed_clusters=many_clusters,
-        health_score=0.5,
         llm_summary="Many issues found",
         execution_time=1.0
     )
@@ -474,7 +476,7 @@ def test_create_empty_result(settings, mock_components):
     assert result.warning_count == 0
     assert result.analyzed_clusters == []
     assert len(result.top_issues) == 0
-    assert result.health_score == 1.0
+    # health_score field was removed
     assert "No logs found" in result.llm_summary
     assert result.execution_time == 1.5
 

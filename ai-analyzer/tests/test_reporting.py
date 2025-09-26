@@ -121,11 +121,10 @@ def sample_analyzed_clusters(sample_logs):
 def sample_analysis(sample_analyzed_clusters):
     """Create sample daily analysis result"""
     return DailyAnalysisResult(
-        analysis_date=datetime(2022, 1, 1),
+        analysis_date=datetime(2022, 1, 1).date(),
         total_logs_processed=1000,
         error_count=50,
         warning_count=150,
-        health_score=0.75,  # Valid health score between 0 and 1
         analyzed_clusters=sample_analyzed_clusters,
         llm_summary="System showing elevated error rates with database issues.",
         execution_time=45.2
@@ -182,7 +181,8 @@ def test_generate_daily_report_success(settings, sample_analysis):
     assert summary["total_logs_processed"] == 1000
     assert summary["error_count"] == 50
     assert summary["warning_count"] == 150
-    assert summary["health_score"] == 0.75
+    assert summary["error_rate"] == 5.0  # 50/1000 * 100
+    assert summary["warning_rate"] == 15.0  # 150/1000 * 100
     assert summary["clusters_found"] == 3
     assert summary["top_issues_identified"] == 3
 
@@ -344,7 +344,7 @@ def test_generate_and_save_report_success(settings, sample_analysis):
     with open(filepath, 'r', encoding='utf-8') as f:
         saved_report = json.load(f)
 
-    assert saved_report["analysis_date"] == "2022-01-01T00:00:00"
+    assert saved_report["analysis_date"] == "2022-01-01"
     assert saved_report["summary"]["total_logs_processed"] == 1000
 
 

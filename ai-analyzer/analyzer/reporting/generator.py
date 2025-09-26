@@ -46,7 +46,8 @@ class ReportGenerator:
                     "total_logs_processed": analysis.total_logs_processed,
                     "error_count": analysis.error_count,
                     "warning_count": analysis.warning_count,
-                    "health_score": analysis.health_score,
+                    "error_rate": analysis.error_rate,
+                    "warning_rate": analysis.warning_rate,
                     "clusters_found": len(analysis.analyzed_clusters),
                     "top_issues_identified": len(analysis.top_issues)
                 },
@@ -55,6 +56,7 @@ class ReportGenerator:
                         "id": i,
                         "representative_message": self._truncate_message(cluster.representative_log.message, 200),
                         "count": cluster.count,
+                        "total_log_count": cluster.total_log_count,
                         "severity": cluster.severity.value if cluster.severity else "low",
                         "severity_score": cluster.severity_score if cluster.severity else 0,
                         "source": cluster.representative_log.source,
@@ -73,6 +75,7 @@ class ReportGenerator:
                         "timestamp": cluster.representative_log.timestamp,
                         "level": cluster.representative_log.level,
                         "cluster_count": cluster.count,
+                        "total_log_count": cluster.total_log_count,
                         "affected_sources": len(cluster.sources)
                     }
                     for cluster in analysis.top_issues
@@ -141,7 +144,8 @@ class ReportGenerator:
                 "text": "🤖 Daily Log Analysis Complete",
                 "analysis_date": report["analysis_date"],
                 "summary": {
-                    "health_score": report["summary"]["health_score"],
+                    "error_rate": report["summary"]["error_rate"],
+                    "warning_rate": report["summary"]["warning_rate"],
                     "total_logs": report["summary"]["total_logs_processed"],
                     "errors": report["summary"]["error_count"],
                     "warnings": report["summary"]["warning_count"],

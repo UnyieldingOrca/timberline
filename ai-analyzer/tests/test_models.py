@@ -381,7 +381,6 @@ def sample_analysis_result():
         error_count=10,
         warning_count=20,
         analyzed_clusters=[cluster],
-        health_score=0.7,
         llm_summary="System showing some issues",
         execution_time=30.5
     )
@@ -393,7 +392,7 @@ def test_valid_analysis_result_creation(sample_analysis_result):
     assert result.total_logs_processed == 100
     assert result.error_count == 10
     assert result.warning_count == 20
-    assert result.health_score == 0.7
+    # Health score was removed from the model
 
 
 def test_negative_logs_raises_error():
@@ -402,7 +401,7 @@ def test_negative_logs_raises_error():
         DailyAnalysisResult(
             analysis_date=date(2022, 1, 1), total_logs_processed=-1,
             error_count=0, warning_count=0, analyzed_clusters=[],
-            health_score=0.5, llm_summary="test", execution_time=1.0
+            llm_summary="test", execution_time=1.0
         )
 
 
@@ -412,7 +411,7 @@ def test_negative_error_count_raises_error():
         DailyAnalysisResult(
             analysis_date=date(2022, 1, 1), total_logs_processed=100,
             error_count=-1, warning_count=0, analyzed_clusters=[],
-            health_score=0.5, llm_summary="test", execution_time=1.0
+            llm_summary="test", execution_time=1.0
         )
 
 
@@ -422,17 +421,16 @@ def test_negative_execution_time_raises_error():
         DailyAnalysisResult(
             analysis_date=date(2022, 1, 1), total_logs_processed=100,
             error_count=0, warning_count=0, analyzed_clusters=[],
-            health_score=0.5, llm_summary="test", execution_time=-1.0
+            llm_summary="test", execution_time=-1.0
         )
 
 
-def test_invalid_health_score_raises_error():
-    """Test that invalid health score raises error"""
-    with pytest.raises(ValueError, match="Health score must be between 0 and 1"):
-        DailyAnalysisResult(
-            analysis_date=date(2022, 1, 1), total_logs_processed=100,
-            error_count=0, warning_count=0, analyzed_clusters=[],
-            health_score=1.5, llm_summary="test", execution_time=1.0
+def test_invalid_duplicate_count_raises_error():
+    """Test that invalid duplicate count raises error"""
+    with pytest.raises(ValueError, match="Duplicate count must be positive"):
+        LogRecord(
+            id=1, timestamp=1640995200000, message="error", source="pod",
+            metadata={}, embedding=[0.1], level="ERROR", duplicate_count=0
         )
 
 
@@ -461,7 +459,6 @@ def test_top_issues_property_limits_to_10():
         error_count=0,
         warning_count=0,
         analyzed_clusters=clusters,
-        health_score=0.5,
         llm_summary="test",
         execution_time=1.0
     )
@@ -476,7 +473,7 @@ def test_empty_summary_raises_error():
         DailyAnalysisResult(
             analysis_date=date(2022, 1, 1), total_logs_processed=100,
             error_count=0, warning_count=0, analyzed_clusters=[],
-            health_score=0.5, llm_summary="", execution_time=1.0
+            llm_summary="", execution_time=1.0
         )
 
 
@@ -503,7 +500,7 @@ def test_zero_logs_rates():
     result = DailyAnalysisResult(
         analysis_date=date(2022, 1, 1), total_logs_processed=0,
         error_count=0, warning_count=0, analyzed_clusters=[],
-        health_score=1.0, llm_summary="test", execution_time=1.0
+ llm_summary="test", execution_time=1.0
     )
     assert result.error_rate == 0.0
     assert result.warning_rate == 0.0
@@ -521,22 +518,23 @@ def test_get_health_status():
     healthy = DailyAnalysisResult(
         analysis_date=date(2022, 1, 1), total_logs_processed=100,
         error_count=0, warning_count=0, analyzed_clusters=[],
-        health_score=0.9, llm_summary="test", execution_time=1.0
+        llm_summary="test", execution_time=1.0
     )
     warning = DailyAnalysisResult(
         analysis_date=date(2022, 1, 1), total_logs_processed=100,
-        error_count=0, warning_count=0, analyzed_clusters=[],
-        health_score=0.6, llm_summary="test", execution_time=1.0
+        error_count=5, warning_count=10, analyzed_clusters=[],
+        llm_summary="test", execution_time=1.0
     )
     critical = DailyAnalysisResult(
         analysis_date=date(2022, 1, 1), total_logs_processed=100,
-        error_count=0, warning_count=0, analyzed_clusters=[],
-        health_score=0.3, llm_summary="test", execution_time=1.0
+        error_count=20, warning_count=30, analyzed_clusters=[],
+        llm_summary="test", execution_time=1.0
     )
 
-    assert healthy.get_health_status() == "healthy"
-    assert warning.get_health_status() == "warning"
-    assert critical.get_health_status() == "critical"
+    # Health status now based on error rates instead of health_score
+    assert healthy.error_rate == 0.0
+    assert warning.error_rate == 5.0
+    assert critical.error_rate == 20.0
 
 
 def test_to_summary_dict(sample_analysis_result):
@@ -551,8 +549,7 @@ def test_to_summary_dict(sample_analysis_result):
     assert summary['info_count'] == 70
     assert summary['error_rate'] == 10.0
     assert summary['warning_rate'] == 20.0
-    assert summary['health_score'] == 0.7
-    assert summary['health_status'] == "warning"
+    # health_score and health_status removed from model
     assert summary['critical_issues_count'] == 1
     assert summary['total_clusters'] == 1
     assert summary['execution_time'] == 30.5

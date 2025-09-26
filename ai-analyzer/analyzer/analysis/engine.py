@@ -99,21 +99,22 @@ class AnalysisEngine:
             logger.info("Step 3: Running LLM analysis")
             analyzed_clusters = self.process_log_clusters(clusters)
 
-            # Step 4: Calculate statistics
-            error_count = len([log for log in logs if log.level in ["ERROR", "CRITICAL"]])
-            warning_count = len([log for log in logs if log.level == "WARNING"])
+            # Step 4: Calculate statistics (accounting for duplicate counts)
+            total_actual_logs = sum(log.duplicate_count for log in logs)
+            error_count = sum(log.duplicate_count for log in logs if log.level in ["ERROR", "CRITICAL"])
+            warning_count = sum(log.duplicate_count for log in logs if log.level == "WARNING")
 
             # Step 6: Generate LLM summary
             logger.info("Step 6: Generating LLM summary")
             top_clusters = [c for c in analyzed_clusters if c.is_actionable()][:10]
             llm_summary = self._generate_summary(
-                len(logs), error_count, warning_count, top_clusters
+                total_actual_logs, error_count, warning_count, top_clusters
             )
 
             # Create result
             result = DailyAnalysisResult(
                 analysis_date=analysis_date,
-                total_logs_processed=len(logs),
+                total_logs_processed=total_actual_logs,
                 error_count=error_count,
                 warning_count=warning_count,
                 analyzed_clusters=analyzed_clusters,
@@ -131,7 +132,7 @@ class AnalysisEngine:
                 # Don't fail the entire analysis for report issues
 
             logger.info(f"Daily analysis completed in {result.execution_time:.2f}s - "
-                       f"{len(logs)} logs, {len(clusters)} clusters")
+                       f"{len(logs)} unique logs ({total_actual_logs} total including duplicates), {len(clusters)} clusters")
             return result
 
         except MilvusConnectionError as e:
@@ -171,7 +172,6 @@ class AnalysisEngine:
             error_count=0,
             warning_count=0,
             analyzed_clusters=[],
-            health_score=1.0,  # Perfect health when no logs
             llm_summary="No logs found in the specified time range.",
             execution_time=execution_time
         )

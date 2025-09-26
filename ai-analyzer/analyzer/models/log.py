@@ -70,6 +70,7 @@ class LogRecord:
     metadata: Dict[str, Any]
     embedding: List[float]
     level: str
+    duplicate_count: int = 1  # Number of duplicate occurrences of this log
 
     def __post_init__(self):
         """Validate the log record after initialization"""
@@ -83,6 +84,8 @@ class LogRecord:
             raise ValueError("Embedding cannot be empty")
         if self.level not in [level.value for level in LogLevel]:
             raise ValueError(f"Invalid log level: {self.level}")
+        if self.duplicate_count <= 0:
+            raise ValueError("Duplicate count must be positive")
 
     @property
     def datetime(self) -> datetime:
@@ -108,6 +111,7 @@ class LogRecord:
             'metadata': self.metadata,
             'embedding': self.embedding,
             'level': self.level,
+            'duplicate_count': self.duplicate_count,
             'datetime_iso': self.datetime.isoformat()
         }
 
@@ -137,8 +141,13 @@ class LogCluster:
 
     @property
     def error_count(self) -> int:
-        """Count of error/critical logs in cluster"""
-        return sum(1 for log in self.similar_logs if log.is_error_or_critical())
+        """Count of error/critical logs in cluster, weighted by duplicate_count"""
+        return sum(log.duplicate_count for log in self.similar_logs if log.is_error_or_critical())
+
+    @property
+    def total_log_count(self) -> int:
+        """Total number of actual log occurrences including duplicates"""
+        return sum(log.duplicate_count for log in self.similar_logs)
 
     @property
     def sources(self) -> List[str]:
@@ -216,6 +225,7 @@ class LogCluster:
         result = {
             'representative_log': self.representative_log.to_dict(),
             'count': self.count,
+            'total_log_count': self.total_log_count,
             'error_count': self.error_count,
             'sources': self.sources,
             'common_labels': self.common_labels,
