@@ -37,21 +37,29 @@ class LogGenerator:
         levels = ["ERROR", "WARN", "FATAL", "INFO"]
 
         error_templates = [
-            ("auth-service", "Failed to authenticate user: invalid credentials"),
-            ("auth-service", "Rate limit approaching for IP {ip}"),
-            ("database", "Connection pool exhausted, cannot serve requests"),
-            ("payment-service", "Payment processing failed: {reason}"),
-            ("order-service", "Order validation failed: {reason}"),
-            ("cache-service", "Cache miss rate exceeding threshold: {percent}%"),
-            ("notification-service", "Failed to send email: {reason}"),
-            ("api-gateway", "Request timeout after {timeout}ms"),
-            ("user-service", "User lookup failed for ID: {user_id}"),
-            ("database", "Query execution time exceeded {timeout}ms"),
-            ("payment-service", "Transaction declined: {reason}"),
-            ("auth-service", "Token validation failed: {reason}"),
-            ("cache-service", "Redis connection lost: {reason}"),
-            ("order-service", "Inventory check failed for product {product_id}"),
-            ("notification-service", "Push notification delivery failed: {reason}")
+            ("ERROR", "auth-service", "Failed to authenticate user: invalid credentials"),
+            ("WARN", "auth-service", "Rate limit approaching for IP {ip}"),
+            ("FATAL", "database", "Connection pool exhausted, cannot serve requests"),
+            ("ERROR", "payment-service", "Payment processing failed: {reason}"),
+            ("ERROR", "order-service", "Order validation failed: {reason}"),
+            ("WARN", "cache-service", "Cache miss rate exceeding threshold: {percent}%"),
+            ("ERROR", "notification-service", "Failed to send email: {reason}"),
+            ("ERROR", "api-gateway", "Request timeout after {timeout}ms"),
+            ("ERROR", "user-service", "User lookup failed for ID: {user_id}"),
+            ("WARN", "database", "Query execution time exceeded {timeout}ms"),
+            ("ERROR", "payment-service", "Transaction declined: {reason}"),
+            ("ERROR", "auth-service", "Token validation failed: {reason}"),
+            ("FATAL", "cache-service", "Redis connection lost: {reason}"),
+            ("ERROR", "order-service", "Inventory check failed for product {product_id}"),
+            ("ERROR", "notification-service", "Push notification delivery failed: {reason}"),
+            ("INFO", "auth-service", "User successfully authenticated"),
+            ("INFO", "database", "Database connection established"),
+            ("INFO", "payment-service", "Payment processed successfully"),
+            ("INFO", "order-service", "Order created successfully"),
+            ("INFO", "cache-service", "Cache warmed up successfully"),
+            ("INFO", "notification-service", "Email sent successfully"),
+            ("INFO", "api-gateway", "Request processed successfully"),
+            ("INFO", "user-service", "User profile updated")
         ]
 
         payment_reasons = ["insufficient funds", "expired card", "invalid CVV", "card declined", "fraud detected"]
@@ -78,8 +86,7 @@ class LogGenerator:
         for i in range(70):  # 10x the original 7 logs
             timestamp = base_time + timedelta(seconds=random.randint(0, 3600), microseconds=random.randint(0, 999999))
 
-            service, template = random.choice(error_templates)
-            level = random.choice(levels) if random.random() > 0.3 else ("ERROR" if "failed" in template.lower() or "timeout" in template.lower() else "WARN")
+            level, service, template = random.choice(error_templates)
 
             # Fill in template variables
             message = template.format(
@@ -152,46 +159,102 @@ class LogGenerator:
                 log_entry["timestamp"] = None
             # If "none", don't add timestamp field at all
 
-            # Add service-specific fields based on service type
+            # Add service-specific fields based on service type with appropriate levels
             if service == "api-gateway":
+                message_options = [
+                    ("ERROR", "Request timeout"),
+                    ("WARN", "Rate limit exceeded"),
+                    ("ERROR", "Invalid route"),
+                    ("FATAL", "Upstream service down"),
+                    ("INFO", "Request processed successfully"),
+                    ("DEBUG", "Route lookup completed")
+                ]
+                chosen_level, message = random.choice(message_options)
+                log_entry["level"] = chosen_level
                 log_entry.update({
-                    "message": random.choice(["Request timeout", "Rate limit exceeded", "Invalid route", "Upstream service down"]),
+                    "message": message,
                     "duration": random.randint(100, 10000),
                     "status_code": random.choice([200, 400, 404, 500, 502, 503]),
                     "client_ip": f"192.168.{random.randint(1,255)}.{random.randint(1,255)}"
                 })
             elif service == "user-service":
+                message_options = [
+                    ("WARN", "Slow query detected"),
+                    ("ERROR", "User authentication failed"),
+                    ("INFO", "Profile update successful"),
+                    ("INFO", "Password reset requested"),
+                    ("DEBUG", "User session created")
+                ]
+                chosen_level, message = random.choice(message_options)
+                log_entry["level"] = chosen_level
                 log_entry.update({
-                    "message": random.choice(["Slow query detected", "User authentication failed", "Profile update successful", "Password reset requested"]),
+                    "message": message,
                     "query_duration": random.randint(100, 5000),
                     "table": random.choice(tables),
                     "user_id": f"user-{random.randint(1000, 9999)}"
                 })
             elif service == "payment-gateway":
+                message_options = [
+                    ("FATAL", "Circuit breaker opened"),
+                    ("INFO", "Payment processed"),
+                    ("ERROR", "Transaction failed"),
+                    ("ERROR", "Fraud detected"),
+                    ("DEBUG", "Payment validation started")
+                ]
+                chosen_level, message = random.choice(message_options)
+                log_entry["level"] = chosen_level
                 log_entry.update({
-                    "message": random.choice(["Circuit breaker opened", "Payment processed", "Transaction failed", "Fraud detected"]),
+                    "message": message,
                     "error_rate": round(random.uniform(0.1, 0.9), 2),
                     "threshold": round(random.uniform(0.7, 0.9), 2),
                     "transaction_id": f"txn-{random.randint(10000, 99999)}"
                 })
             elif service == "inventory":
+                message_options = [
+                    ("WARN", "Stock level critical"),
+                    ("INFO", "Inventory updated"),
+                    ("WARN", "Reorder point reached"),
+                    ("INFO", "Stock audit completed"),
+                    ("DEBUG", "Inventory check initiated")
+                ]
+                chosen_level, message = random.choice(message_options)
+                log_entry["level"] = chosen_level
                 log_entry.update({
-                    "message": random.choice(["Stock level critical", "Inventory updated", "Reorder point reached", "Stock audit completed"]),
+                    "message": message,
                     "product_id": f"prod-{random.randint(100, 999)}",
                     "current_stock": random.randint(0, 100),
                     "threshold": random.randint(5, 20)
                 })
             elif service == "analytics":
+                message_options = [
+                    ("INFO", "Report generated"),
+                    ("INFO", "Data processing completed"),
+                    ("INFO", "Export finished"),
+                    ("INFO", "Metrics calculated"),
+                    ("WARN", "Processing taking longer than expected"),
+                    ("DEBUG", "Analytics job started")
+                ]
+                chosen_level, message = random.choice(message_options)
+                log_entry["level"] = chosen_level
                 log_entry.update({
-                    "message": random.choice(["Report generated", "Data processing completed", "Export finished", "Metrics calculated"]),
+                    "message": message,
                     "report_type": random.choice(report_types),
                     "records_processed": random.randint(1000, 50000),
                     "processing_time": random.randint(10, 300)
                 })
             else:
                 # Generic fields for other services
+                message_options = [
+                    ("INFO", "Operation completed"),
+                    ("ERROR", "Error occurred"),
+                    ("WARN", "Warning condition"),
+                    ("DEBUG", "Debug info"),
+                    ("INFO", "Service started")
+                ]
+                chosen_level, message = random.choice(message_options)
+                log_entry["level"] = chosen_level
                 log_entry.update({
-                    "message": random.choice(["Operation completed", "Error occurred", "Warning condition", "Debug info", "Service started"]),
+                    "message": message,
                     "correlation_id": f"corr-{random.randint(1000, 9999)}",
                     "execution_time": random.randint(10, 1000)
                 })
@@ -285,49 +348,28 @@ class LogGenerator:
         levels = ["INFO", "WARN", "ERROR", "DEBUG", "FATAL"]
 
         message_templates = [
-            "Application started successfully",
-            "Configuration file not found, using defaults",
-            "Failed to connect to external service",
-            "Processing request ID: {request_id}",
-            "Database connection lost, retrying...",
-            "Critical system failure detected",
-            "Memory usage exceeding limits: {percent}%",
-            "Disk space running low: {percent}% remaining",
-            "Authentication token expired",
-            "Service health check failed",
-            "Queue processing delayed by {delay}ms",
-            "Cache hit ratio dropped to {percent}%",
-            "Network timeout connecting to {service}",
-            "SSL certificate expires in {days} days",
-            "Load average high: {load}",
-            "File system error on {partition}",
-            "Backup completed successfully ({size}GB)",
-            "User session expired for {user_id}",
-            "Rate limit exceeded for {endpoint}"
+            ("INFO", "Application started successfully"),
+            ("WARN", "Configuration file not found, using defaults"),
+            ("ERROR", "Failed to connect to external service"),
+            ("DEBUG", "Processing request ID: {request_id}"),
+            ("ERROR", "Database connection lost, retrying..."),
+            ("FATAL", "Critical system failure detected"),
+            ("WARN", "Memory usage exceeding limits: {percent}%"),
+            ("WARN", "Disk space running low: {percent}% remaining"),
+            ("ERROR", "Authentication token expired"),
+            ("ERROR", "Service health check failed"),
+            ("WARN", "Queue processing delayed by {delay}ms"),
+            ("WARN", "Cache hit ratio dropped to {percent}%"),
+            ("ERROR", "Network timeout connecting to {service}"),
+            ("WARN", "SSL certificate expires in {days} days"),
+            ("WARN", "Load average high: {load}"),
+            ("ERROR", "File system error on {partition}"),
+            ("INFO", "Backup completed successfully ({size}GB)"),
+            ("INFO", "User session expired for {user_id}"),
+            ("ERROR", "Rate limit exceeded for {endpoint}")
         ]
 
         logs = []
-        for i in range(80):  # 10x the original 8 logs
-            timestamp = base_time + timedelta(seconds=random.randint(0, 3600))
-            host = random.choice(hosts)
-            app = random.choice(apps)
-            pid = random.randint(1000, 9999)
-            level = random.choice(levels)
-            message = random.choice(message_templates)
-
-            # Fill in template variables
-            message = message.format(
-                request_id=''.join(random.choices('0123456789abcdef', k=8)),
-                percent=random.randint(5, 95),
-                delay=random.randint(100, 5000),
-                service=random.choice(["auth-service", "payment-api", "user-db", "cache-cluster"]),
-                days=random.randint(1, 90),
-                load=f"{random.uniform(1.0, 8.0):.2f}",
-                partition=random.choice(["/var/log", "/tmp", "/data", "/home"]),
-                size=f"{random.uniform(0.5, 50.0):.1f}",
-                user_id=f"usr-{random.randint(1000, 9999)}",
-                endpoint=random.choice(["/api/users", "/api/orders", "/health", "/metrics"])
-            )
 
         # Choose one consistent format for this entire mixed format log file
         format_choice = random.choice([1, 2, 3, 4, 5, 6])
@@ -351,8 +393,7 @@ class LogGenerator:
             host = random.choice(hosts)
             app = random.choice(apps)
             pid = random.randint(1000, 9999)
-            level = random.choice(levels)
-            message = random.choice(message_templates)
+            level, message = random.choice(message_templates)
 
             # Fill in template variables
             message = message.format(
@@ -406,21 +447,26 @@ class LogGenerator:
         base_time = datetime.now(UTC)
 
         message_templates = [
-            "Processing request batch {batch_id}",
-            "Database query executed in {duration}ms",
-            "Cache operation: {operation} for key {key}",
-            "Authentication check for user {user_id}",
-            "Load test message {msg_id} with random data: {data}",
-            "Network request to {endpoint} completed",
-            "Memory allocation: {size}MB for operation {op_id}",
-            "Thread pool status: {active}/{total} active",
-            "Queue processing: {processed}/{total} messages",
-            "Heartbeat from worker {worker_id}",
-            "Metrics collection interval {interval}s",
-            "Configuration reload triggered",
-            "Health check probe: {status}",
-            "Session management: {operation} session {session_id}",
-            "File I/O operation: {operation} {filename}"
+            ("INFO", "Processing request batch {batch_id}"),
+            ("DEBUG", "Database query executed in {duration}ms"),
+            ("DEBUG", "Cache operation: {operation} for key {key}"),
+            ("DEBUG", "Authentication check for user {user_id}"),
+            ("TRACE", "Load test message {msg_id} with random data: {data}"),
+            ("INFO", "Network request to {endpoint} completed"),
+            ("DEBUG", "Memory allocation: {size}MB for operation {op_id}"),
+            ("INFO", "Thread pool status: {active}/{total} active"),
+            ("INFO", "Queue processing: {processed}/{total} messages"),
+            ("DEBUG", "Heartbeat from worker {worker_id}"),
+            ("INFO", "Metrics collection interval {interval}s"),
+            ("INFO", "Configuration reload triggered"),
+            ("DEBUG", "Health check probe: {status}"),
+            ("DEBUG", "Session management: {operation} session {session_id}"),
+            ("DEBUG", "File I/O operation: {operation} {filename}"),
+            ("ERROR", "Request processing failed for batch {batch_id}"),
+            ("ERROR", "Database query timeout after {duration}ms"),
+            ("WARN", "Cache miss rate high for key {key}"),
+            ("ERROR", "Authentication failed for user {user_id}"),
+            ("WARN", "Memory usage high: {size}MB allocated")
         ]
 
         timestamp_formats_high_volume = [
@@ -444,9 +490,8 @@ class LogGenerator:
                 offset_microseconds = random.randint(0, 999999)
                 timestamp = base_time + timedelta(seconds=offset_seconds, microseconds=offset_microseconds)
 
-                level = random.choice(levels)
+                level, template = random.choice(message_templates)
                 service = random.choice(services)
-                template = random.choice(message_templates)
 
                 # Fill in template variables
                 message = template.format(

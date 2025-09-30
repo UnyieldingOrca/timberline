@@ -40,7 +40,6 @@ class TestAIAnalyzerIntegration:
         # Step 4: Ingest realistic log scenarios via direct API
         print(f"\n=== Ingesting {len(realistic_log_data)} realistic log scenarios ===")
         batch_size = 5
-        total_ingested = 0
 
         for i in range(0, len(realistic_log_data), batch_size):
             batch = realistic_log_data[i:i + batch_size]
@@ -49,10 +48,8 @@ class TestAIAnalyzerIntegration:
 
             result = response.json()
             assert result.get("success") == True
-            total_ingested += len(batch)
             print(f"Ingested batch {i//batch_size + 1}: {len(batch)} logs")
 
-        print(f"Total logs ingested via API: {total_ingested}")
 
         # Step 5: Wait for all logs to be processed and indexed in Milvus
         print("=== Waiting for all logs to be processed in Milvus ===")
@@ -64,7 +61,7 @@ class TestAIAnalyzerIntegration:
         result = ai_analyzer_engine.analyze_daily_logs(analysis_date)
 
         # Step 7: Validate and display results
-        self._validate_analysis_result(result, analysis_date, expected_min_logs=total_ingested)
+        self._validate_analysis_result(result, analysis_date, expected_min_logs=100)
         self._display_analysis_results(result)
 
     def _validate_analysis_result(self, result, expected_date, expected_min_logs=1):
@@ -74,7 +71,6 @@ class TestAIAnalyzerIntegration:
         assert isinstance(result, DailyAnalysisResult), "Result should be DailyAnalysisResult"
         assert result.total_logs_processed >= expected_min_logs, f"Should have processed at least {expected_min_logs} logs, got {result.total_logs_processed}"
         assert result.analysis_date == expected_date, "Analysis date should match"
-        assert 0 <= result.health_score <= 1, f"Health score should be 0-1, got {result.health_score}"
         assert result.execution_time > 0, "Execution time should be positive"
 
         # Validate that we found some errors/warnings from our realistic scenarios
@@ -96,7 +92,6 @@ class TestAIAnalyzerIntegration:
         print(f"  Logs Processed: {result.total_logs_processed}")
         print(f"  Errors: {result.error_count}")
         print(f"  Warnings: {result.warning_count}")
-        print(f"  Health Score: {result.health_score:.3f}")
         print(f"  Clusters: {len(result.analyzed_clusters)}")
         print(f"  Top Issues: {len(result.top_issues)}")
         print(f"  Execution Time: {result.execution_time:.2f}s")
@@ -111,8 +106,8 @@ class TestAIAnalyzerIntegration:
         if result.top_issues:
             print(f"\n🚨 TOP ISSUES:")
             for i, issue in enumerate(result.top_issues[:5]):
-                print(f"  Issue {i+1}: [Severity {issue.severity}] {issue.category}")
-                print(f"    Message: {issue.log.message[:100]}...")
+                print(f"  Issue {i+1}: [Severity {issue.severity}]")
+                print(f"    Message: {issue.representative_log.message}...")
                 print(f"    Reasoning: {issue.reasoning[:100]}...")
 
         print(f"\n📝 LLM SUMMARY:")

@@ -106,7 +106,7 @@ class AnalysisEngine:
 
             # Step 6: Generate LLM summary
             logger.info("Step 6: Generating LLM summary")
-            top_clusters = [c for c in analyzed_clusters if c.is_actionable()][:10]
+            top_clusters = [c for c in analyzed_clusters if c.is_actionable()]
             llm_summary = self._generate_summary(
                 total_actual_logs, error_count, warning_count, top_clusters
             )

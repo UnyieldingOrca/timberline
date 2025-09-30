@@ -353,7 +353,7 @@ Choose from: low, medium, high, critical
         # Prepare top issues information
         issues_info = []
         if top_clusters:
-            for i, cluster in enumerate(top_clusters[:5], 1):
+            for i, cluster in enumerate(top_clusters, 1):
                 severity_text = cluster.severity.value if cluster.severity else "unknown"
                 issues_info.append(
                     f"{i}. [Severity {severity_text}] {cluster.representative_log.message[:100]} "
