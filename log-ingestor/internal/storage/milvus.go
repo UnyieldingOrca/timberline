@@ -303,52 +303,14 @@ func (m *MilvusClient) UpdateDuplicateCount(ctx context.Context, logID int64) er
 	currentCount := duplicateCountCol.Data()[0]
 	newCount := currentCount + 1
 
-	// Get all other fields for upsert
-	timestampCol, ok := result.GetColumn(FieldTimestamp).(*column.ColumnInt64)
-	if !ok {
-		return fmt.Errorf("failed to extract timestamp column")
-	}
-
-	messageCol, ok := result.GetColumn(FieldMessage).(*column.ColumnVarChar)
-	if !ok {
-		return fmt.Errorf("failed to extract message column")
-	}
-
-	sourceCol, ok := result.GetColumn(FieldSource).(*column.ColumnVarChar)
-	if !ok {
-		return fmt.Errorf("failed to extract source column")
-	}
-
-	metadataCol, ok := result.GetColumn(FieldMetadata).(*column.ColumnJSONBytes)
-	if !ok {
-		return fmt.Errorf("failed to extract metadata column")
-	}
-
-	embeddingCol, ok := result.GetColumn(FieldEmbedding).(*column.ColumnFloatVector)
-	if !ok {
-		return fmt.Errorf("failed to extract embedding column")
-	}
-
-	// Convert embedding data to [][]float32
-	embeddingData := embeddingCol.Data()
-	embeddings := make([][]float32, len(embeddingData))
-	for i, vec := range embeddingData {
-		embeddings[i] = []float32(vec)
-	}
-
 	// Create columns for upsert with updated duplicate count
 	upsertColumns := []column.Column{
 		column.NewColumnInt64(FieldID, []int64{logID}),
-		column.NewColumnInt64(FieldTimestamp, timestampCol.Data()),
-		column.NewColumnVarChar(FieldMessage, messageCol.Data()),
-		column.NewColumnVarChar(FieldSource, sourceCol.Data()),
-		column.NewColumnJSONBytes(FieldMetadata, metadataCol.Data()),
 		column.NewColumnInt64(FieldDuplicateCount, []int64{newCount}),
-		column.NewColumnFloatVector(FieldEmbedding, m.embeddingDim, embeddings),
 	}
 
 	// Perform upsert operation with explicit ID (Milvus will update if ID exists)
-	upsertOption := milvusclient.NewColumnBasedInsertOption(m.collection).WithColumns(upsertColumns...)
+	upsertOption := milvusclient.NewColumnBasedInsertOption(m.collection).WithColumns(upsertColumns...).WithPartialUpdate(true)
 	upsertResult, err := m.client.Upsert(ctx, upsertOption)
 	if err != nil {
 		return fmt.Errorf("failed to update log entry: %w", err)
@@ -358,7 +320,8 @@ func (m *MilvusClient) UpdateDuplicateCount(ctx context.Context, logID int64) er
 		"log_id":       logID,
 		"old_count":    currentCount,
 		"new_count":    newCount,
-		"insert_count": upsertResult.UpsertCount,
+		"upsert_count": upsertResult.UpsertCount,
+		"upsert_ids":   upsertResult.IDs,
 	}).Info("Successfully updated duplicate count")
 
 	return nil

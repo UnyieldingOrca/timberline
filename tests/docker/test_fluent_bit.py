@@ -52,7 +52,7 @@ def query_logs_by_test_id(collection: Collection, test_id: str, limit: int = 20)
     query_expr = f'message like "%{test_id}%"'
     return collection.query(
         expr=query_expr,
-        output_fields=["message", "timestamp"],
+        output_fields=["message", "timestamp", "duplicate_count"],
         limit=limit
     )
 
@@ -145,11 +145,7 @@ def test_fluent_bit_health_endpoint(fluent_bit_health_url, http_retry):
     """Test that Fluent Bit health endpoint is responding."""
     response = http_retry(fluent_bit_health_url, timeout=10)
     assert response.status_code == 200
-    # Fluent Bit health endpoint returns JSON with version info
-    import json
-    health_data = json.loads(response.text)
-    assert "fluent-bit" in health_data, "Health response should contain fluent-bit info"
-    assert "version" in health_data["fluent-bit"], "Health response should contain version"
+    assert response.content == b'ok\n'
 
 
 def test_fluent_bit_log_ingestion(test_logs_dir, http_retry, cleanup_milvus_data):
@@ -492,6 +488,87 @@ def test_fluent_bit_mixed_format_timestamps(test_logs_dir, http_retry, cleanup_m
         print(f"Found {len(results)} mixed format logs with test ID {test_id}")
 
         validate_log_count_by_test_id(results, test_id, total_expected)
+
+    finally:
+        disconnect_from_milvus()
+
+
+def test_fluent_bit_subsampling(test_logs_dir, http_retry, cleanup_milvus_data):
+    """Test that Fluent Bit subsampling filter correctly samples INFO logs at 50% while keeping all ERROR/WARN logs."""
+    test_logs_dir = setup_test_logs_dir(test_logs_dir)
+
+    current_time = datetime.now(UTC)
+    base_timestamp = int(current_time.timestamp() * 1000)
+    test_id = str(base_timestamp)
+
+    # Generate a large batch of INFO and ERROR logs
+    num_info_logs = 30  # Large sample for statistical significance
+    num_error_logs = 10
+
+    info_messages = []
+    error_messages = []
+
+    # Write INFO logs
+    test_log_file_info = test_logs_dir / f"subsampling-info-test-{test_id}.log"
+    with open(test_log_file_info, 'w') as f:
+        for i in range(num_info_logs):
+            log_line = f'{current_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]}Z INFO [subsampling-test] Info log {i} - {test_id}'
+            info_messages.append(f"Info log {i} - {test_id}")
+            f.write(log_line + '\n')
+
+    # Write ERROR logs
+    test_log_file_error = test_logs_dir / f"subsampling-error-test-{test_id}.log"
+    with open(test_log_file_error, 'w') as f:
+        for i in range(num_error_logs):
+            log_line = f'{current_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]}Z ERROR [subsampling-test] Error log {i} - {test_id}'
+            error_messages.append(f"Error log {i} - {test_id}")
+            f.write(log_line + '\n')
+
+    # Wait for Fluent Bit to process logs
+    time.sleep(5)
+
+    try:
+        collection = connect_to_milvus()
+        results = query_logs_by_test_id(collection, test_id, limit=300)
+
+        print(f"\nSubsampling Test Results for {test_id}:")
+        print(f"  Total logs written: {num_info_logs + num_error_logs}")
+        print(f"  - INFO logs: {num_info_logs}")
+        print(f"  - ERROR logs: {num_error_logs}")
+        print(f"  Total logs found in Milvus: {len(results)} (including duplicates)")
+
+        # Count how many INFO and ERROR logs were ingested
+        error_logs_sum = sum(result.get("duplicate_count", 0) for result in results if "Error log" in result["message"])
+        info_logs_sum = sum(result.get("duplicate_count", 0) for result in results if "Info log" in result["message"])
+
+        print(f"  - INFO logs ingested: {info_logs_sum}")
+        print(f"  - ERROR logs ingested: {error_logs_sum}")
+
+        # Calculate sampling rates
+        info_sampling_rate = (info_logs_sum / num_info_logs) * 100 if num_info_logs > 0 else 0
+        error_sampling_rate = (error_logs_sum / num_error_logs) * 100 if num_error_logs > 0 else 0
+
+        print(f"  Sampling rates:")
+        print(f"  - INFO: {info_sampling_rate:.1f}%")
+        print(f"  - ERROR: {error_sampling_rate:.1f}%")
+
+        # Assertions:
+        # 1. All ERROR logs should be kept (100% or close to it due to timing)
+        assert error_logs_sum >= int(num_error_logs * 0.9), \
+            f"Expected at least 90% of ERROR logs ({int(num_error_logs * 0.9)}), got {error_logs_sum}"
+
+        assert 10 <= info_sampling_rate <= 90, \
+            f"Expected INFO sampling rate between 10-90%, got {info_sampling_rate:.1f}%"
+
+        # 3. INFO logs should be significantly less than ERROR logs proportionally
+        info_ratio = info_logs_sum / num_info_logs if num_info_logs > 0 else 0
+        error_ratio = error_logs_sum / num_error_logs if num_error_logs > 0 else 0
+        assert info_ratio < error_ratio, \
+            f"INFO logs should have lower ingestion ratio ({info_ratio:.2f}) than ERROR logs ({error_ratio:.2f})"
+
+        print(f"✓ Subsampling test passed!")
+        print(f"  - ERROR logs retained: {error_sampling_rate:.1f}% (expected ~100%)")
+        print(f"  - INFO logs sampled: {info_sampling_rate:.1f}% (expected ~50%)")
 
     finally:
         disconnect_from_milvus()

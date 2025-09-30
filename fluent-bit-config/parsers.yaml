@@ -1,0 +1,12 @@
+parsers:
+  - name: docker
+    format: json
+    time_key: time
+    time_format: '%Y-%m-%dT%H:%M:%S.%L'
+    time_keep: on
+
+  - name: syslog
+    format: regex
+    regex: '^\<(?<pri>[0-9]+)\>(?<time>[^ ]* {1,2}[^ ]* [^ ]*) (?<host>[^ ]*) (?<ident>[a-zA-Z0-9_\/\.\-]*)(?:\[(?<pid>[0-9]+)\])?(?:[^\:]*\:)? *(?<message>.*)$'
+    time_key: time
+    time_format: '%b %d %H:%M:%S'

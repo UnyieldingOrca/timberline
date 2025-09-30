@@ -1,0 +1,52 @@
+service:
+  flush: 1
+  daemon: off
+  log_level: info
+  parsers_file: parsers.yaml
+  http_server: on
+  http_listen: 0.0.0.0
+  http_port: 2020
+  storage.metrics: on
+  health_check: on
+  hc_errors_count: 5
+  hc_retry_failure_count: 5
+  hc_period: 60
+
+pipeline:
+  inputs:
+    - name: tail
+      path: /test-logs/**/*.log
+      parser: docker
+      tag: kube.*
+      refresh_interval: 1
+      mem_buf_limit: 16KB
+      skip_long_lines: on
+      skip_empty_lines: on
+      read_from_head: false
+
+  filters:
+    - name: record_modifier
+      match: '*'
+      record: source fluent-bit
+
+    - name: lua
+      match: '*'
+      script: /fluent-bit/etc/sampling.lua
+      call: subsample_info
+
+  outputs:
+    - name: http
+      match: '*'
+      host: log-ingestor
+      port: 8080
+      uri: /api/v1/logs/stream
+      format: json_lines
+      header: Content-Type application/x-ndjson
+      retry_limit: 1
+      net.keepalive: on
+      net.keepalive_idle_timeout: 30
+
+    - name: prometheus_exporter
+      match: '*'
+      host: 0.0.0.0
+      port: 9090

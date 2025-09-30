@@ -17,10 +17,28 @@ spec:
       serviceAccountName: fluent-bit
       containers:
       - name: fluent-bit
-        image: fluent/fluent-bit:3.2.7
+        image: fluent/fluent-bit:4.1.0
+        command:
+          - /fluent-bit/bin/fluent-bit
+        args:
+          - -c
+          - /fluent-bit/etc/fluent-bit.yaml
         ports:
         - containerPort: 2020
           name: http
+        env:
+        - name: FLUENT_BIT_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: FLUENT_BIT_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: FLUENT_BIT_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         volumeMounts:
         - name: config
           mountPath: /fluent-bit/etc/
@@ -38,11 +56,11 @@ spec:
           readOnly: true
         resources:
           requests:
-            memory: "64Mi"
-            cpu: "50m"
-          limits:
             memory: "128Mi"
             cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
         livenessProbe:
           httpGet:
             path: /api/v1/health
