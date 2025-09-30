@@ -61,17 +61,18 @@ wait_for_pod() {
     kubectl wait --for=condition=ready --timeout=${timeout}s pod -l $selector -n $namespace
 }
 
-# Create or recreate cluster
+# Create cluster if it doesn't exist
 if cluster_exists; then
-    echo -e "${YELLOW}Cluster $CLUSTER_NAME already exists. Recreating...${NC}"
-    kind delete cluster --name $CLUSTER_NAME
+    echo -e "${YELLOW}Cluster $CLUSTER_NAME already exists. Updating deployments...${NC}"
+    # Set kubectl context
+    kubectl config use-context kind-$CLUSTER_NAME
+else
+    echo -e "${BLUE}Creating kind cluster: $CLUSTER_NAME${NC}"
+    kind create cluster --name $CLUSTER_NAME --config "$PROJECT_ROOT/kind-cluster.yaml"
+
+    # Set kubectl context
+    kubectl cluster-info --context kind-$CLUSTER_NAME
 fi
-
-echo -e "${BLUE}Creating kind cluster: $CLUSTER_NAME${NC}"
-kind create cluster --name $CLUSTER_NAME --config "$PROJECT_ROOT/kind-cluster.yaml"
-
-# Set kubectl context
-kubectl cluster-info --context kind-$CLUSTER_NAME
 
 # Build and load Docker images
 echo -e "${BLUE}Building and loading Docker images...${NC}"
@@ -98,6 +99,10 @@ kubectl apply -f "$PROJECT_ROOT/k8s/llm/"
 kubectl apply -f "$PROJECT_ROOT/k8s/log-ingestor/"
 kubectl apply -f "$PROJECT_ROOT/k8s/fluent-bit/"
 kubectl apply -f "$PROJECT_ROOT/k8s/attu/"
+
+# Force restart log-ingestor deployment to pick up new image
+echo -e "${BLUE}Restarting log-ingestor deployment to pick up new image...${NC}"
+kubectl rollout restart deployment/log-ingestor -n timberline
 
 echo -e "${YELLOW}Waiting for all deployments to be ready...${NC}"
 
@@ -132,13 +137,13 @@ echo -e "${BLUE}Running health checks...${NC}"
 
 services=(
     "http://localhost:9091/healthz Milvus_Metrics"
-    "http://localhost:8000/health Embedding_Service"
-    "http://localhost:8001/health Chat_Service"
-    "http://localhost:9000/minio/health/live MinIO"
-    "http://localhost:8080/api/v1/healthz Log_Ingestor"
-    "http://localhost:9092/metrics Log_Ingestor_Metrics"
-    "http://localhost:2020/api/v1/health Fluent_Bit"
-    "http://localhost:3000 Attu_UI"
+    "http://localhost:9100/health Embedding_Service"
+    "http://localhost:9101/health Chat_Service"
+    "http://localhost:9900/minio/health/live MinIO"
+    "http://localhost:9200/api/v1/healthz Log_Ingestor"
+    "http://localhost:9201/metrics Log_Ingestor_Metrics"
+    "http://localhost:9020/api/v1/health Fluent_Bit"
+    "http://localhost:9300 Attu_UI"
 )
 
 echo "Checking service health..."
@@ -161,15 +166,16 @@ echo "  Name: $CLUSTER_NAME"
 echo "  Context: kind-$CLUSTER_NAME"
 echo ""
 echo "Service endpoints:"
-echo "  Log Ingestor API: http://localhost:8080"
-echo "  Log Ingestor Metrics: http://localhost:9092/metrics"
-echo "  Milvus gRPC: localhost:19530"
+echo "  Log Ingestor API: http://localhost:9200"
+echo "  Log Ingestor Metrics: http://localhost:9201/metrics"
+echo "  Milvus gRPC: localhost:9530"
 echo "  Milvus Metrics: http://localhost:9091/healthz"
-echo "  Embedding Service: http://localhost:8000"
-echo "  Chat Service: http://localhost:8001"
-echo "  MinIO Console: http://localhost:9001"
-echo "  Attu UI: http://localhost:3000"
-echo "  Fluent Bit Metrics: http://localhost:2020"
+echo "  Embedding Service: http://localhost:9100"
+echo "  Chat Service: http://localhost:9101"
+echo "  MinIO API: http://localhost:9900"
+echo "  MinIO Console: http://localhost:9901"
+echo "  Attu UI: http://localhost:9300"
+echo "  Fluent Bit Metrics: http://localhost:9020"
 echo ""
 echo "To run integration tests:"
 echo "  ./scripts/run-kind-integration-tests.sh"

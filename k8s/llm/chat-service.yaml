@@ -93,7 +93,7 @@ spec:
   - port: 8001
     targetPort: 8001
     name: http
-    nodePort: 30801
+    nodePort: 30101
   selector:
     app: llama-cpp-chat
   type: NodePort

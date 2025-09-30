@@ -33,8 +33,8 @@ data:
         K8S-Logging.Exclude Off
         Annotations         Off
         Labels              On
-        Merge_Log           On
-        Keep_Log            Off
+        Merge_Log           Off
+        Keep_Log            On
         Buffer_Size         256k
 
     [FILTER]

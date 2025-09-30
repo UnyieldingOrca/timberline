@@ -8,9 +8,9 @@ import requests
 
 
 @pytest.mark.parametrize("service_name,url", [
-    ("Log Collector", "http://localhost:2020/api/v1/metrics"),
-    ("Log Ingestor", "http://localhost:9092/metrics"),
-    ("Milvus Health", "http://localhost:9091/healthz")
+    ("Log Collector", "http://localhost:8020/api/v1/metrics"),
+    ("Log Ingestor", "http://localhost:8201/metrics"),
+    ("Milvus Health", "http://localhost:8091/healthz")
 ])
 def test_metrics_endpoint_accessibility(service_name, url, http_retry):
     """Test that metrics endpoints are accessible."""
@@ -21,7 +21,7 @@ def test_metrics_endpoint_accessibility(service_name, url, http_retry):
 
 def test_log_collector_metrics_content(http_retry):
     """Test log collector metrics endpoint content."""
-    response = http_retry("http://localhost:2020/api/v1/metrics", timeout=10)
+    response = http_retry("http://localhost:8020/api/v1/metrics", timeout=10)
     assert response.status_code == 200
 
     metrics_text = response.text
@@ -36,7 +36,7 @@ def test_log_collector_metrics_content(http_retry):
 
 def test_log_ingestor_metrics_content(http_retry):
     """Test log ingestor metrics endpoint content."""
-    response = http_retry("http://localhost:9092/metrics", timeout=10)
+    response = http_retry("http://localhost:8201/metrics", timeout=10)
     assert response.status_code == 200
 
     metrics_text = response.text
@@ -50,7 +50,7 @@ def test_log_ingestor_metrics_content(http_retry):
 
 def test_milvus_health_endpoint(http_retry):
     """Test Milvus health endpoint."""
-    response = http_retry("http://localhost:9091/healthz", timeout=10)
+    response = http_retry("http://localhost:8091/healthz", timeout=10)
     assert response.status_code == 200, "Milvus health endpoint not accessible"
 
 
@@ -62,7 +62,7 @@ def test_milvus_health_endpoint(http_retry):
 def test_standard_go_metrics_present(metric_pattern, http_retry):
     """Test that standard Go metrics are present in service endpoints."""
     endpoints = [
-        "http://localhost:9092/metrics"   # Log Ingestor (only test Prometheus-format metrics)
+        "http://localhost:8201/metrics"   # Log Ingestor (only test Prometheus-format metrics)
     ]
 
     for endpoint in endpoints:
@@ -77,7 +77,7 @@ def test_standard_go_metrics_present(metric_pattern, http_retry):
 def test_metrics_format_validity(http_retry):
     """Test that metrics are in valid Prometheus format."""
     endpoints = [
-        ("Log Ingestor", "http://localhost:9092/metrics")
+        ("Log Ingestor", "http://localhost:8201/metrics")
     ]
 
     for service_name, endpoint in endpoints:
@@ -101,9 +101,9 @@ def test_metrics_format_validity(http_retry):
 def test_metrics_response_time(http_retry):
     """Test that metrics endpoints respond quickly."""
     endpoints = [
-        "http://localhost:2020/api/v1/metrics",
-        "http://localhost:9092/metrics",
-        "http://localhost:9091/healthz"
+        "http://localhost:8020/api/v1/metrics",
+        "http://localhost:8201/metrics",
+        "http://localhost:8091/healthz"
     ]
 
     import time
@@ -119,7 +119,7 @@ def test_metrics_response_time(http_retry):
 
 def test_metrics_consistency_across_calls(http_retry):
     """Test that metrics endpoints return consistent data structure across multiple calls."""
-    endpoint = "http://localhost:2020/api/v1/metrics"
+    endpoint = "http://localhost:8020/api/v1/metrics"
 
     # Make two calls
     response1 = http_retry(endpoint, timeout=10)

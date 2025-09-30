@@ -35,7 +35,7 @@ def cleanup_milvus_data():
             connections.connect(
                 alias="cleanup",
                 host="localhost",
-                port="19530",
+                port="8530",
                 timeout=5
             )
 
@@ -109,13 +109,13 @@ def log_generator(test_logs_dir, request):
 @pytest.fixture(scope="session")
 def ingestor_url():
     """Log ingestor service URL."""
-    return "http://localhost:8080"
+    return "http://localhost:8200"
 
 
 @pytest.fixture(scope="session")
 def embedding_url():
     """Embedding service URL."""
-    return "http://localhost:8000/v1/embeddings"
+    return "http://localhost:8100/v1/embeddings"
 
 
 @pytest.fixture(scope="session")
@@ -127,31 +127,31 @@ def milvus_host():
 @pytest.fixture(scope="session")
 def milvus_port():
     """Milvus database port."""
-    return "19530"
+    return "8530"
 
 
 # Service health check fixtures
 @pytest.fixture(scope="session")
 def service_endpoints():
-    """Service health endpoint configurations for kind cluster."""
+    """Service health endpoint configurations for docker-compose."""
     return [
-        ("Milvus Metrics", "http://localhost:9091/healthz", 200),
-        ("llama.cpp Embedding", "http://localhost:8000/health", 200),
-        ("llama.cpp Chat", "http://localhost:8001/health", 200),
-        ("MinIO", "http://localhost:9000/minio/health/live", 200),
-        ("Log Ingestor Health", "http://localhost:8080/api/v1/healthz", 200),
-        ("Log Ingestor Metrics", "http://localhost:9092/metrics", 200),
-        ("Fluent Bit Health", "http://localhost:2020/api/v1/health", 200)
+        ("Milvus Metrics", "http://localhost:8091/healthz", 200),
+        ("llama.cpp Embedding", "http://localhost:8100/health", 200),
+        ("llama.cpp Chat", "http://localhost:8101/health", 200),
+        ("MinIO", "http://localhost:8900/minio/health/live", 200),
+        ("Log Ingestor Health", "http://localhost:8200/api/v1/healthz", 200),
+        ("Log Ingestor Metrics", "http://localhost:8201/metrics", 200),
+        ("Fluent Bit Health", "http://localhost:8020/api/v1/health", 200)
     ]
 
 
 @pytest.fixture(scope="session")
 def metrics_endpoints():
-    """Metrics endpoint configurations for kind cluster."""
+    """Metrics endpoint configurations for docker-compose."""
     return [
-        ("Fluent Bit", "http://localhost:2020/api/v1/metrics"),
-        ("Log Ingestor", "http://localhost:9092/metrics"),
-        ("Milvus Health", "http://localhost:9091/healthz")
+        ("Fluent Bit", "http://localhost:8020/api/v1/metrics"),
+        ("Log Ingestor", "http://localhost:8201/metrics"),
+        ("Milvus Health", "http://localhost:8091/healthz")
     ]
 
 
@@ -249,7 +249,7 @@ def ai_analyzer_settings(milvus_host, milvus_port):
         'analysis_window_hours': 24,
         'max_logs_per_analysis': 1000,
         'cluster_batch_size': 10,
-        'llm_endpoint': 'http://localhost:8001/v1',
+        'llm_endpoint': 'http://localhost:8101/v1',
         'llm_model': 'llama-3.2-3b-instruct',
         'llm_api_key': 'test-key',
         'report_output_dir': '/tmp/test-reports',

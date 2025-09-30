@@ -73,7 +73,7 @@ def test_embedding_vector_dimensions(embedding_url, http_retry):
 
 def test_embedding_service_health(http_retry):
     """Test embedding service health endpoint."""
-    response = http_retry("http://localhost:8000/health", timeout=10)
+    response = http_retry("http://localhost:8100/health", timeout=10)
     assert response.status_code == 200, "Embedding service health check failed"
 
 

@@ -20,7 +20,7 @@ spec:
         fsGroup: 0
       containers:
       - name: milvus
-        image: milvusdb/milvus:v2.6.1
+        image: milvusdb/milvus:v2.6.2
         command:
         - milvus
         - run

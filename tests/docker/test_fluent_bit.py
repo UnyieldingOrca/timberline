@@ -21,7 +21,7 @@ def connect_to_milvus() -> Collection:
     connections.connect(
         alias="test",
         host="localhost",
-        port="19530",
+        port="8530",
         timeout=5
     )
     collection = Collection("timberline_logs", using="test")
@@ -132,13 +132,13 @@ def setup_test_logs_dir(test_logs_dir: Path, subdir: str = "fluent-bit-tests") -
 @pytest.fixture
 def fluent_bit_health_url():
     """Fluent Bit health endpoint URL."""
-    return "http://localhost:2020/api/v1/health"
+    return "http://localhost:8020/api/v1/health"
 
 
 @pytest.fixture
 def log_ingestor_metrics_url():
     """Log ingestor metrics endpoint URL."""
-    return "http://localhost:9092/metrics"
+    return "http://localhost:8201/metrics"
 
 
 def test_fluent_bit_health_endpoint(fluent_bit_health_url, http_retry):

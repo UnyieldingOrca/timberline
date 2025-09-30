@@ -8,13 +8,13 @@ import requests
 
 
 @pytest.mark.parametrize("service_name,url,expected_status", [
-    ("Milvus Metrics", "http://localhost:9091/healthz", 200),
-    ("llama.cpp Embedding", "http://localhost:8000/health", 200),
-    ("llama.cpp Chat", "http://localhost:8001/health", 200),
-    ("MinIO", "http://localhost:9000/minio/health/live", 200),
-    ("Log Ingestor Health", "http://localhost:8080/api/v1/healthz", 200),
-    ("Log Ingestor Metrics", "http://localhost:9092/metrics", 200),
-    ("Fluent Bit Health", "http://localhost:2020/api/v1/health", 200)
+    ("Milvus Metrics", "http://localhost:8091/healthz", 200),
+    ("llama.cpp Embedding", "http://localhost:8100/health", 200),
+    ("llama.cpp Chat", "http://localhost:8101/health", 200),
+    ("MinIO", "http://localhost:8900/minio/health/live", 200),
+    ("Log Ingestor Health", "http://localhost:8200/api/v1/healthz", 200),
+    ("Log Ingestor Metrics", "http://localhost:8201/metrics", 200),
+    ("Fluent Bit Health", "http://localhost:8020/api/v1/health", 200)
 ])
 def test_service_health_endpoint(service_name, url, expected_status, http_retry):
     """Test individual service health endpoints."""

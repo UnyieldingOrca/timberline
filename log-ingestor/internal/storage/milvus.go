@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/milvus-io/milvus/client/v2/column"
 	"github.com/milvus-io/milvus/client/v2/entity"
@@ -216,7 +217,29 @@ func (m *MilvusClient) SearchSimilarLogs(ctx context.Context, embedding []float3
 	// Perform search
 	results, err := m.client.Search(ctx, searchOption)
 	if err != nil {
-		return nil, fmt.Errorf("failed to search similar logs: %w", err)
+		// Check if error is due to collection not being loaded
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "collection not loaded") || strings.Contains(errMsg, "CollectionNotLoaded") {
+			m.logger.WithField("collection", m.collection).Info("Collection not loaded, loading now")
+
+			// Try to load the collection
+			loadTask, loadErr := m.client.LoadCollection(ctx, milvusclient.NewLoadCollectionOption(m.collection))
+			if loadErr != nil {
+				return nil, fmt.Errorf("failed to load collection: %w", loadErr)
+			}
+			loadErr = loadTask.Await(ctx)
+			if loadErr != nil {
+				return nil, fmt.Errorf("collection load task failed: %w", loadErr)
+			}
+
+			// Retry the search
+			results, err = m.client.Search(ctx, searchOption)
+			if err != nil {
+				return nil, fmt.Errorf("failed to search similar logs after loading collection: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("failed to search similar logs: %w", err)
+		}
 	}
 
 	if len(results) == 0 {
@@ -324,9 +347,9 @@ func (m *MilvusClient) UpdateDuplicateCount(ctx context.Context, logID int64) er
 		column.NewColumnFloatVector(FieldEmbedding, m.embeddingDim, embeddings),
 	}
 
-	// Perform insert operation with explicit ID (Milvus will update if ID exists)
-	insertOption := milvusclient.NewColumnBasedInsertOption(m.collection).WithColumns(upsertColumns...)
-	insertResult, err := m.client.Insert(ctx, insertOption)
+	// Perform upsert operation with explicit ID (Milvus will update if ID exists)
+	upsertOption := milvusclient.NewColumnBasedInsertOption(m.collection).WithColumns(upsertColumns...)
+	upsertResult, err := m.client.Upsert(ctx, upsertOption)
 	if err != nil {
 		return fmt.Errorf("failed to update log entry: %w", err)
 	}
@@ -335,7 +358,7 @@ func (m *MilvusClient) UpdateDuplicateCount(ctx context.Context, logID int64) er
 		"log_id":       logID,
 		"old_count":    currentCount,
 		"new_count":    newCount,
-		"insert_count": insertResult.InsertCount,
+		"insert_count": upsertResult.UpsertCount,
 	}).Info("Successfully updated duplicate count")
 
 	return nil

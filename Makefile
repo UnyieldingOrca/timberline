@@ -38,13 +38,6 @@ kind-setup: ## Setup kind cluster for integration testing
 	@echo "🚀 Setting up kind cluster for integration testing..."
 	./scripts/kind-setup.sh
 
-kind-test: kind-setup test-kind ## Setup kind cluster and run integration tests
-	@echo "✅ Kind integration test complete"
-
-
-test-kind: ## Run integration tests against kind cluster
-	@echo "🧪 Running integration tests against kind cluster..."
-	./scripts/run-kind-integration-tests.sh
 
 kind-down: ## Delete kind cluster
 	@echo "🗑️ Deleting kind cluster..."

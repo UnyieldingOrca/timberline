@@ -28,7 +28,7 @@ def test_log_ingestor_liveness(ingestor_url, http_retry):
 
 def test_log_ingestor_metrics(http_retry):
     """Test log ingestor metrics endpoint."""
-    response = http_retry("http://localhost:9092/metrics", timeout=10)
+    response = http_retry("http://localhost:8201/metrics", timeout=10)
     assert response.status_code == 200
     assert len(response.text) > 0
 

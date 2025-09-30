@@ -6,7 +6,7 @@ metadata:
   labels:
     app: llama-cpp-embedding
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app: llama-cpp-embedding
@@ -49,6 +49,7 @@ spec:
         - "8"
         - --ctx-size
         - "2048"
+        - --log-disable
         ports:
         - containerPort: 8000
           name: http
@@ -90,7 +91,7 @@ spec:
   - port: 8000
     targetPort: 8000
     name: http
-    nodePort: 30800
+    nodePort: 30100
   selector:
     app: llama-cpp-embedding
   type: NodePort

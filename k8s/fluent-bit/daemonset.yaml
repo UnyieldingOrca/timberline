@@ -90,7 +90,7 @@ spec:
   - port: 2020
     targetPort: 2020
     name: http
-    nodePort: 30090
+    nodePort: 30020
   selector:
     app: fluent-bit
   type: NodePort
