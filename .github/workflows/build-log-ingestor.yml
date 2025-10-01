@@ -47,9 +47,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract version
-        id: version
+      - name: Extract version and image name
+        id: meta
         run: |
+          # Lowercase the repository owner for Docker registry compatibility
+          IMAGE_NAME_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "image_name=${IMAGE_NAME_LOWER}/log-ingestor" >> $GITHUB_OUTPUT
+
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             # Use the tag name (strip refs/tags/ prefix)
             VERSION=${GITHUB_REF#refs/tags/}
@@ -58,6 +62,7 @@ jobs:
             VERSION=$(git describe --tags --always --dirty)
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Image: ${IMAGE_NAME_LOWER}/log-ingestor"
           echo "Version: $VERSION"
 
       - name: Build and push Docker image
@@ -67,12 +72,12 @@ jobs:
           file: ./log-ingestor/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.image_name }}:${{ steps.meta.outputs.version }}
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.image_name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            VERSION=${{ steps.version.outputs.version }}
+            VERSION=${{ steps.meta.outputs.version }}
 
       - name: Image digest
-        run: echo "Image pushed with tags ${{ steps.version.outputs.version }} and latest"
+        run: echo "Image pushed with tags ${{ steps.meta.outputs.version }} and latest"
