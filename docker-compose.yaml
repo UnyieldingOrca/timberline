@@ -143,6 +143,7 @@ services:
       - WRITE_TIMEOUT=10s
       - RATE_LIMIT_RPS=1000
       - SIMILARITY_THRESHOLD=0.95
+      - NUM_WORKERS=8
     ports:
       - "8200:8080"
       - "8201:9092"

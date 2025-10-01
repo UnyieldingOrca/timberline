@@ -5,6 +5,7 @@ Tests log collection, parsing, and forwarding to log-ingestor.
 
 import json
 import os
+import random
 import tempfile
 import time
 from datetime import datetime, UTC
@@ -154,7 +155,7 @@ def test_fluent_bit_log_ingestion(test_logs_dir, http_retry, cleanup_milvus_data
 
     # Generate unique test log entries
     timestamp = int(time.time() * 1000)
-    test_id = str(timestamp)
+    test_id = f"{timestamp}-{random.randint(1000, 9999)}"
 
     test_logs = [
         {
@@ -210,7 +211,7 @@ def test_fluent_bit_json_parsing(test_logs_dir, log_ingestor_metrics_url, http_r
     test_logs_dir = setup_test_logs_dir(test_logs_dir)
 
     timestamp = int(time.time() * 1000)
-    test_id = str(timestamp)
+    test_id = f"{timestamp}-{random.randint(1000, 9999)}"
 
     complex_log = {
         "timestamp": timestamp,
@@ -253,7 +254,7 @@ def test_fluent_bit_timestamp_formats(test_logs_dir, http_retry, cleanup_milvus_
 
     current_time = datetime.now(UTC)
     base_timestamp = int(current_time.timestamp() * 1000)
-    test_id = str(base_timestamp)
+    test_id = f"{base_timestamp}-{random.randint(1000, 9999)}"
 
     # Define various timestamp formats that our log generator produces
     timestamp_test_cases = [
@@ -333,7 +334,7 @@ def test_fluent_bit_structured_json_timestamps(test_logs_dir, http_retry, cleanu
 
     current_time = datetime.now(UTC)
     base_timestamp = int(current_time.timestamp() * 1000)
-    test_id = str(base_timestamp)
+    test_id = f"{base_timestamp}-{random.randint(1000, 9999)}"
 
     # Application JSON logs that Fluent Bit will put in the 'log' field
     app_json_logs = [
@@ -435,7 +436,7 @@ def test_fluent_bit_mixed_format_timestamps(test_logs_dir, http_retry, cleanup_m
 
     current_time = datetime.now(UTC)
     base_timestamp = int(current_time.timestamp() * 1000)
-    test_id = str(base_timestamp)
+    test_id = f"{base_timestamp}-{random.randint(1000, 9999)}"
 
     # Test different mixed log formats that maintain consistency within the stream
     mixed_format_test_cases = [
@@ -499,7 +500,7 @@ def test_fluent_bit_subsampling(test_logs_dir, http_retry, cleanup_milvus_data):
 
     current_time = datetime.now(UTC)
     base_timestamp = int(current_time.timestamp() * 1000)
-    test_id = str(base_timestamp)
+    test_id = f"{base_timestamp}-{random.randint(1000, 9999)}"
 
     # Generate a large batch of INFO and ERROR logs
     num_info_logs = 30  # Large sample for statistical significance
