@@ -24,6 +24,7 @@ type Config struct {
 	RateLimitRPS               int           `json:"rate_limit_rps"`
 	SimilarityThreshold        float32       `json:"similarity_threshold"`
 	MinExamplesBeforeExclusion int           `json:"min_examples_before_exclusion"`
+	NumWorkers                 int           `json:"num_workers"`
 }
 
 func NewConfig() *Config {
@@ -43,6 +44,7 @@ func NewConfig() *Config {
 		RateLimitRPS:               getEnvAsInt("RATE_LIMIT_RPS", 1000),
 		SimilarityThreshold:        getEnvAsFloat32("SIMILARITY_THRESHOLD", 0.95),
 		MinExamplesBeforeExclusion: getEnvAsInt("MIN_EXAMPLES_BEFORE_EXCLUSION", 3),
+		NumWorkers:                 getEnvAsInt("NUM_WORKERS", 4),
 	}
 }
 
@@ -73,6 +75,9 @@ func (c *Config) Validate() error {
 	}
 	if c.MinExamplesBeforeExclusion < 1 {
 		return &ConfigError{Field: "MIN_EXAMPLES_BEFORE_EXCLUSION", Message: "must be greater than 0"}
+	}
+	if c.NumWorkers <= 0 {
+		return &ConfigError{Field: "NUM_WORKERS", Message: "must be greater than 0"}
 	}
 
 	return nil

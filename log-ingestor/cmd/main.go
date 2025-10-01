@@ -15,6 +15,7 @@ import (
 	"github.com/timberline/log-ingestor/internal/embedding"
 	"github.com/timberline/log-ingestor/internal/handlers"
 	"github.com/timberline/log-ingestor/internal/metrics"
+	"github.com/timberline/log-ingestor/internal/models"
 	"github.com/timberline/log-ingestor/internal/storage"
 )
 
@@ -63,9 +64,21 @@ func main() {
 		logger.WithError(err).Fatal("Failed to create collection")
 	}
 
+	// Create log processing channel
+	logChannel := make(chan *models.LogEntry, 10000) // Buffer size of 10000
+
 	// Initialize handlers
-	streamHandler := handlers.NewStreamHandler(storageClient, cfg.BatchSize)
+	streamHandler := handlers.NewStreamHandler(storageClient, cfg.BatchSize, logChannel)
 	healthHandler := handlers.NewHealthHandler(storageClient, Version, logrus.StandardLogger())
+
+	// Start worker goroutines for processing logs
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	defer workerCancel()
+
+	logger.WithField("num_workers", cfg.NumWorkers).Info("Starting log processing workers")
+	for i := 0; i < cfg.NumWorkers; i++ {
+		go streamHandler.StartWorker(workerCtx)
+	}
 
 	// Setup HTTP router
 	router := mux.NewRouter()
@@ -140,6 +153,11 @@ func main() {
 	if err := metricsServer.Stop(shutdownCtx); err != nil {
 		logger.WithError(err).Error("Metrics server shutdown failed")
 	}
+
+	// Stop workers
+	logger.Info("Stopping log processing workers")
+	workerCancel()
+	close(logChannel)
 
 	logger.Info("Service stopped")
 }

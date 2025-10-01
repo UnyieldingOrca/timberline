@@ -49,6 +49,10 @@ func newTestStreamHandler(storage storage.StorageInterface, maxBatchSize int) *S
 			Name: "log_ingestor_stream_invalid_lines_total",
 			Help: "Total number of invalid JSON lines",
 		}),
+		queueSize: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "log_ingestor_queue_size",
+			Help: "Current number of log entries in the processing queue",
+		}),
 	}
 
 	// Register with custom registry
@@ -58,13 +62,24 @@ func newTestStreamHandler(storage storage.StorageInterface, maxBatchSize int) *S
 	registry.MustRegister(metrics.batchesCreated)
 	registry.MustRegister(metrics.errorsTotal)
 	registry.MustRegister(metrics.invalidLines)
+	registry.MustRegister(metrics.queueSize)
 
-	return &StreamHandler{
+	// Create channel for log processing
+	logChannel := make(chan *models.LogEntry, 1000)
+
+	handler := &StreamHandler{
 		storage:      storage,
 		logger:       logrus.New(),
 		metrics:      metrics,
 		maxBatchSize: maxBatchSize,
+		logChannel:   logChannel,
 	}
+
+	// Start worker goroutine for tests
+	ctx := context.Background()
+	go handler.StartWorker(ctx)
+
+	return handler
 }
 
 // MockStorageInterface for testing
@@ -140,6 +155,9 @@ func TestStreamHandler_HandleStream_Success(t *testing.T) {
 	// Execute request
 	handler.HandleStream(rr, req)
 
+	// Wait for worker to process entries
+	time.Sleep(100 * time.Millisecond)
+
 	// Verify response
 	assert.Equal(t, http.StatusOK, rr.Code)
 
@@ -192,6 +210,9 @@ invalid json line
 
 	rr := httptest.NewRecorder()
 	handler.HandleStream(rr, req)
+
+	// Wait for worker to process entries
+	time.Sleep(100 * time.Millisecond)
 
 	// Should still succeed with valid entries
 	assert.Equal(t, http.StatusOK, rr.Code)
@@ -255,6 +276,9 @@ func TestStreamHandler_HandleStream_BatchSizeLimiting(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler.HandleStream(rr, req)
 
+	// Wait for worker to process entries
+	time.Sleep(100 * time.Millisecond)
+
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var response models.BatchResponse
@@ -287,13 +311,18 @@ func TestStreamHandler_HandleStream_StorageError(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler.HandleStream(rr, req)
 
-	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	// Wait for worker to process entries
+	time.Sleep(100 * time.Millisecond)
+
+	// With async processing, the HTTP endpoint returns success even if storage fails
+	// (the worker logs the error but doesn't propagate it back to the HTTP response)
+	assert.Equal(t, http.StatusOK, rr.Code)
 
 	var response models.BatchResponse
 	err := json.Unmarshal(rr.Body.Bytes(), &response)
 	assert.NoError(t, err)
-	assert.False(t, response.Success)
-	assert.Contains(t, response.Errors[0], "Stream processing error")
+	assert.True(t, response.Success)
+	assert.Equal(t, 1, response.ProcessedCount)
 
 	mockStorage.AssertExpectations(t)
 }

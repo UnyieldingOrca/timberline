@@ -102,6 +102,7 @@ type StreamHandler struct {
 	logger       *logrus.Logger
 	metrics      *StreamMetrics
 	maxBatchSize int
+	logChannel   chan *models.LogEntry
 }
 
 type StreamMetrics struct {
@@ -111,9 +112,10 @@ type StreamMetrics struct {
 	batchesCreated  prometheus.Counter
 	errorsTotal     prometheus.Counter
 	invalidLines    prometheus.Counter
+	queueSize       prometheus.Gauge
 }
 
-func NewStreamHandler(storage storage.StorageInterface, maxBatchSize int) *StreamHandler {
+func NewStreamHandler(storage storage.StorageInterface, maxBatchSize int, logChannel chan *models.LogEntry) *StreamHandler {
 	metrics := &StreamMetrics{
 		requestsTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "log_ingestor_stream_requests_total",
@@ -140,6 +142,10 @@ func NewStreamHandler(storage storage.StorageInterface, maxBatchSize int) *Strea
 			Name: "log_ingestor_stream_invalid_lines_total",
 			Help: "Total number of invalid JSON lines",
 		}),
+		queueSize: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "log_ingestor_queue_size",
+			Help: "Current number of log entries in the processing queue",
+		}),
 	}
 
 	// Register metrics, ignoring duplicate registration errors for tests
@@ -149,12 +155,14 @@ func NewStreamHandler(storage storage.StorageInterface, maxBatchSize int) *Strea
 	_ = prometheus.DefaultRegisterer.Register(metrics.batchesCreated)
 	_ = prometheus.DefaultRegisterer.Register(metrics.errorsTotal)
 	_ = prometheus.DefaultRegisterer.Register(metrics.invalidLines)
+	_ = prometheus.DefaultRegisterer.Register(metrics.queueSize)
 
 	return &StreamHandler{
 		storage:      storage,
 		logger:       logrus.StandardLogger(),
 		metrics:      metrics,
 		maxBatchSize: maxBatchSize,
+		logChannel:   logChannel,
 	}
 }
 
@@ -202,12 +210,7 @@ func (h *StreamHandler) processStream(r *http.Request) (int, error) {
 	scanner := bufio.NewScanner(r.Body)
 	defer func() { _ = r.Body.Close() }()
 
-	var batch []*models.LogEntry
 	totalProcessed := 0
-
-	// Create timeout context for storage operations
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -250,25 +253,16 @@ func (h *StreamHandler) processStream(r *http.Request) (int, error) {
 			continue
 		}
 
-		batch = append(batch, logEntry)
-		h.metrics.linesProcessed.Inc()
-
-		// Process batch when it reaches max size
-		if len(batch) >= h.maxBatchSize {
-			if err := h.storeBatch(ctx, batch); err != nil {
-				return totalProcessed, err
-			}
-			totalProcessed += len(batch)
-			batch = batch[:0] // Reset batch
+		// Publish to channel for async processing
+		select {
+		case h.logChannel <- logEntry:
+			h.metrics.linesProcessed.Inc()
+			totalProcessed++
+		default:
+			// Channel is full, log warning but don't block
+			h.logger.Warn("Log channel full, dropping log entry")
+			h.metrics.errorsTotal.Inc()
 		}
-	}
-
-	// Process remaining entries in final batch
-	if len(batch) > 0 {
-		if err := h.storeBatch(ctx, batch); err != nil {
-			return totalProcessed, err
-		}
-		totalProcessed += len(batch)
 	}
 
 	// Check for scanner errors
@@ -279,20 +273,38 @@ func (h *StreamHandler) processStream(r *http.Request) (int, error) {
 	return totalProcessed, nil
 }
 
-func (h *StreamHandler) storeBatch(ctx context.Context, entries []*models.LogEntry) error {
-	if len(entries) == 0 {
-		return nil
-	}
+// StartWorker starts a worker goroutine that processes log entries from the channel
+func (h *StreamHandler) StartWorker(ctx context.Context) {
+	// Update queue size metric periodically
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
 
-	// Store each log entry individually
-	for _, entry := range entries {
-		if err := h.storage.StoreLog(ctx, entry); err != nil {
-			return err
+	for {
+		select {
+		case <-ctx.Done():
+			// Context cancelled, exit
+			return
+
+		case logEntry, ok := <-h.logChannel:
+			if !ok {
+				// Channel closed, exit
+				return
+			}
+
+			// Update queue size metric
+			h.metrics.queueSize.Set(float64(len(h.logChannel)))
+
+			// Store log entry directly
+			if err := h.storage.StoreLog(ctx, logEntry); err != nil {
+				h.logger.WithError(err).Error("Failed to store log")
+				h.metrics.errorsTotal.Inc()
+			}
+
+		case <-ticker.C:
+			// Periodic queue size update (in case queue is idle)
+			h.metrics.queueSize.Set(float64(len(h.logChannel)))
 		}
 	}
-
-	h.metrics.batchesCreated.Inc()
-	return nil
 }
 
 func (h *StreamHandler) writeErrorResponse(w http.ResponseWriter, statusCode int, message string) {

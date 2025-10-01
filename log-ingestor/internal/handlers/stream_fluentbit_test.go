@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -33,6 +34,9 @@ func TestStreamHandler_FluentBitRealData(t *testing.T) {
 
 	// Call handler
 	handler.HandleStream(w, req)
+
+	// Wait for worker to process entries
+	time.Sleep(100 * time.Millisecond)
 
 	// Verify response
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -68,6 +72,9 @@ func TestStreamHandler_ExpectedFormat(t *testing.T) {
 
 	// Call handler
 	handler.HandleStream(w, req)
+
+	// Wait for worker to process entries
+	time.Sleep(100 * time.Millisecond)
 
 	// Verify response
 	assert.Equal(t, http.StatusOK, w.Code)

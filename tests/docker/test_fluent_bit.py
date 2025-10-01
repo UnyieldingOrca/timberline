@@ -525,7 +525,7 @@ def test_fluent_bit_subsampling(test_logs_dir, http_retry, cleanup_milvus_data):
             f.write(log_line + '\n')
 
     # Wait for Fluent Bit to process logs
-    time.sleep(5)
+    time.sleep(7)
 
     try:
         collection = connect_to_milvus()
