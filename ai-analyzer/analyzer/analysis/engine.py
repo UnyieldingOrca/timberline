@@ -5,6 +5,7 @@ import time
 
 from ..models.log import DailyAnalysisResult, LogCluster, LogRecord, SeverityLevel
 from ..storage.milvus_client import MilvusQueryEngine, MilvusConnectionError
+from ..storage.analysis_results_store import AnalysisResultsStore, AnalysisResultsStoreError
 from ..llm.client import LLMClient
 from ..reporting.generator import ReportGenerator, ReportGeneratorError
 from ..config.settings import Settings
@@ -31,6 +32,7 @@ class AnalysisEngine:
             self.milvus_client = MilvusQueryEngine(settings)
             self.llm_client = LLMClient(settings)
             self.report_generator = ReportGenerator(settings)
+            self.results_store = AnalysisResultsStore(settings)
             logger.info("Analysis engine initialized successfully")
         except Exception as e:
             raise AnalysisEngineError(f"Failed to initialize analysis engine: {e}")
@@ -40,6 +42,7 @@ class AnalysisEngine:
         health_status = {
             "milvus": False,
             "llm": False,
+            "results_store": False,
             "report_generator": True,  # No external dependencies
             "overall": False
         }
@@ -54,11 +57,14 @@ class AnalysisEngine:
         except Exception as e:
             logger.error(f"LLM health check failed: {e}")
 
-        health_status["overall"] = all([
-            health_status["milvus"],
-            health_status["llm"],
-            health_status["report_generator"]
-        ])
+        try:
+            health_status["results_store"] = self.results_store.health_check()
+        except Exception as e:
+            logger.error(f"Results store health check failed: {e}")
+
+        # Overall is healthy if all required components are healthy
+        required_components = ["milvus", "llm", "results_store", "report_generator"]
+        health_status["overall"] = all([health_status[comp] for comp in required_components])
 
         logger.info(f"Health check results: {health_status}")
         return health_status
@@ -124,9 +130,31 @@ class AnalysisEngine:
 
             # Step 8: Generate and save report
             logger.info("Step 8: Generating report")
+            report = None
             try:
-                report_path = self.report_generator.generate_and_save_report(result)
-                logger.info(f"Report saved to: {report_path}")
+                report = self.report_generator.generate_daily_report(result)
+
+                # Save to filesystem
+                report_path = self.report_generator.save_report(report)
+                logger.info(f"Report saved to filesystem: {report_path}")
+
+                # Store in Milvus
+                if report:
+                    logger.info("Step 9: Storing analysis results in Milvus")
+                    try:
+                        # Store in Milvus
+                        result_id = self.results_store.store_analysis_result(
+                            analysis=result,
+                            report=report
+                        )
+                        logger.info(f"Analysis results stored in Milvus with ID: {result_id}")
+                    except AnalysisResultsStoreError as e:
+                        logger.error(f"Failed to store analysis results in Milvus: {e}")
+                        # Don't fail the entire analysis for storage issues
+
+                # Send webhook notification
+                self.report_generator.send_webhook_notification(report)
+
             except ReportGeneratorError as e:
                 logger.error(f"Report generation failed: {e}")
                 # Don't fail the entire analysis for report issues

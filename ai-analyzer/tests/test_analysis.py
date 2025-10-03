@@ -23,8 +23,8 @@ def settings(tmp_path):
         'milvus_collection': 'test_logs',
         'analysis_window_hours': 24,
         'max_logs_per_analysis': 1000,
-        'llm_api_key': 'test-key',
-        'llm_endpoint': 'http://localhost:8000',
+        'openai_api_key': 'test-key',
+        'openai_base_url': 'http://localhost:8000',
         'report_output_dir': str(tmp_path / "reports")
     })
 
@@ -33,16 +33,19 @@ def mock_components():
     """Create mock components"""
     with patch('analyzer.analysis.engine.MilvusQueryEngine') as mock_milvus, \
          patch('analyzer.analysis.engine.LLMClient') as mock_llm, \
-         patch('analyzer.analysis.engine.ReportGenerator') as mock_reporter:
+         patch('analyzer.analysis.engine.ReportGenerator') as mock_reporter, \
+         patch('analyzer.analysis.engine.AnalysisResultsStore') as mock_results_store:
 
         # Configure mocks
         mock_milvus.return_value.health_check.return_value = True
         mock_llm.return_value.health_check.return_value = True
+        mock_results_store.return_value.health_check.return_value = True
 
         yield {
             'milvus': mock_milvus.return_value,
             'llm': mock_llm.return_value,
-            'reporter': mock_reporter.return_value
+            'reporter': mock_reporter.return_value,
+            'results_store': mock_results_store.return_value
         }
 
 @pytest.fixture
@@ -136,6 +139,7 @@ def test_health_check_all_healthy(settings, mock_components):
 
     assert health['milvus'] is True
     assert health['llm'] is True
+    assert health['results_store'] is True
     assert health['report_generator'] is True
     assert health['overall'] is True
 
@@ -151,6 +155,7 @@ def test_health_check_partial_failure(settings, mock_components):
 
     assert health['milvus'] is False
     assert health['llm'] is True
+    assert health['results_store'] is True
     assert health['report_generator'] is True
     assert health['overall'] is False
 
@@ -166,6 +171,7 @@ def test_health_check_with_exceptions(settings, mock_components):
 
     assert health['milvus'] is False
     assert health['llm'] is False
+    assert health['results_store'] is True
     assert health['report_generator'] is True
     assert health['overall'] is False
 
@@ -183,7 +189,8 @@ def test_analyze_daily_logs_success(settings, mock_components, sample_logs, samp
             cluster.reasoning = ["Database error", "Critical failure", "Warning issue"][i]
     mock_components['llm'].analyze_clusters.side_effect = mock_analyze_clusters
     mock_components['llm'].generate_daily_summary.return_value = "System has some issues"
-    mock_components['reporter'].generate_and_save_report.return_value = "/tmp/report.json"
+    mock_components['reporter'].generate_daily_report.return_value = {"summary": "test"}
+    mock_components['reporter'].save_report.return_value = "/tmp/report.json"
 
     result = engine.analyze_daily_logs(date(2022, 1, 1))
 
@@ -203,7 +210,8 @@ def test_analyze_daily_logs_success(settings, mock_components, sample_logs, samp
     mock_components['milvus'].query_time_range.assert_called_once()
     mock_components['milvus'].cluster_similar_logs.assert_called_once_with(sample_logs)
     mock_components['llm'].analyze_clusters.assert_called_once()
-    mock_components['reporter'].generate_and_save_report.assert_called_once()
+    mock_components['reporter'].generate_daily_report.assert_called_once()
+    mock_components['reporter'].save_report.assert_called_once()
 
 def test_analyze_daily_logs_invalid_date(settings, mock_components):
     """Test analysis with invalid date parameter"""
@@ -262,7 +270,7 @@ def test_analyze_daily_logs_report_generation_failure(settings, mock_components,
             cluster.reasoning = "Test reasoning"
     mock_components['llm'].analyze_clusters.side_effect = mock_analyze_clusters
     mock_components['llm'].generate_daily_summary.return_value = "System summary"
-    mock_components['reporter'].generate_and_save_report.side_effect = ReportGeneratorError("Report failed")
+    mock_components['reporter'].generate_daily_report.side_effect = ReportGeneratorError("Report failed")
 
     # Should not raise exception, just log the error
     result = engine.analyze_daily_logs(date(2022, 1, 1))
@@ -485,3 +493,110 @@ def test_analysis_engine_error_inheritance():
     error = AnalysisEngineError("Test error")
     assert isinstance(error, Exception)
     assert str(error) == "Test error"
+
+
+def test_analyze_daily_logs_with_milvus_storage(settings, mock_components, sample_logs, sample_clusters, tmp_path):
+    """Test analysis stores results in Milvus"""
+    engine = AnalysisEngine(settings)
+
+    # Configure mock responses
+    mock_components['milvus'].query_time_range.return_value = sample_logs
+    mock_components['milvus'].cluster_similar_logs.return_value = sample_clusters
+
+    def mock_analyze_clusters(clusters):
+        for i, cluster in enumerate(clusters):
+            cluster.severity = [SeverityLevel.HIGH, SeverityLevel.CRITICAL, SeverityLevel.MEDIUM][i]
+            cluster.reasoning = ["Error reasoning", "Critical reasoning", "Medium reasoning"][i]
+    mock_components['llm'].analyze_clusters.side_effect = mock_analyze_clusters
+    mock_components['llm'].generate_daily_summary.return_value = "System issues found"
+
+    # Mock report generation
+    mock_report = {"summary": "test report"}
+    mock_components['reporter'].generate_daily_report.return_value = mock_report
+    mock_components['reporter'].save_report.return_value = str(tmp_path / "report.json")
+
+    # Mock results store
+    mock_components['results_store'].store_analysis_result.return_value = 123
+
+    result = engine.analyze_daily_logs(date(2022, 1, 1))
+
+    # Verify analysis completed
+    assert isinstance(result, DailyAnalysisResult)
+    assert result.total_logs_processed == 10
+
+    # Verify results were stored in Milvus
+    mock_components['results_store'].store_analysis_result.assert_called_once()
+    store_call = mock_components['results_store'].store_analysis_result.call_args
+    assert store_call[1]['analysis'] == result
+    assert store_call[1]['report'] == mock_report
+
+
+
+
+def test_analyze_daily_logs_milvus_storage_failure_continues(settings, mock_components, sample_logs, sample_clusters, tmp_path):
+    """Test analysis continues even if Milvus storage fails"""
+    engine = AnalysisEngine(settings)
+
+    # Configure mock responses
+    mock_components['milvus'].query_time_range.return_value = sample_logs
+    mock_components['milvus'].cluster_similar_logs.return_value = sample_clusters
+
+    def mock_analyze_clusters(clusters):
+        for i, cluster in enumerate(clusters):
+            cluster.severity = [SeverityLevel.HIGH, SeverityLevel.CRITICAL, SeverityLevel.MEDIUM][i]
+            cluster.reasoning = "Test reasoning"
+    mock_components['llm'].analyze_clusters.side_effect = mock_analyze_clusters
+    mock_components['llm'].generate_daily_summary.return_value = "Summary"
+    mock_components['reporter'].generate_daily_report.return_value = {"summary": "test"}
+    mock_components['reporter'].save_report.return_value = str(tmp_path / "report.json")
+
+    # Mock storage failure
+    from analyzer.storage.analysis_results_store import AnalysisResultsStoreError
+    mock_components['results_store'].store_analysis_result.side_effect = AnalysisResultsStoreError("Storage failed")
+
+    # Analysis should complete despite storage failure
+    result = engine.analyze_daily_logs(date(2022, 1, 1))
+
+    assert isinstance(result, DailyAnalysisResult)
+    assert result.total_logs_processed == 10
+    # Storage was attempted
+    mock_components['results_store'].store_analysis_result.assert_called_once()
+
+
+def test_health_check_with_results_store(settings, mock_components):
+    """Test health check includes results store"""
+    engine = AnalysisEngine(settings)
+
+    # Configure all health checks to return True
+    mock_components['milvus'].health_check.return_value = True
+    mock_components['llm'].health_check.return_value = True
+    mock_components['results_store'].health_check.return_value = True
+
+    health = engine.health_check()
+
+    assert health['milvus'] is True
+    assert health['llm'] is True
+    assert health['results_store'] is True
+    assert health['report_generator'] is True
+    assert health['overall'] is True
+
+    # Verify results store health check was called
+    mock_components['results_store'].health_check.assert_called_once()
+
+
+def test_health_check_results_store_failure(settings, mock_components):
+    """Test health check fails when results store is unhealthy"""
+    engine = AnalysisEngine(settings)
+
+    # Configure results store health check to fail
+    mock_components['milvus'].health_check.return_value = True
+    mock_components['llm'].health_check.return_value = True
+    mock_components['results_store'].health_check.return_value = False
+
+    health = engine.health_check()
+
+    assert health['milvus'] is True
+    assert health['llm'] is True
+    assert health['results_store'] is False
+    assert health['report_generator'] is True
+    assert health['overall'] is False  # Overall fails if results store fails

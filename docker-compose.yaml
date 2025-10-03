@@ -1,4 +1,24 @@
 services:
+  postgres:
+    container_name: timberline-postgres
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: timberline
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      start_period: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - timberline
+
   etcd:
     container_name: timberline-etcd
     image: quay.io/coreos/etcd:v3.5.18
@@ -197,3 +217,6 @@ networks:
   timberline:
     name: timberline
     driver: bridge
+
+volumes:
+  postgres-data:

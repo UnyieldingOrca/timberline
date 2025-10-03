@@ -23,13 +23,13 @@ from .log_generator import LogGenerator
 @pytest.fixture(scope="function")
 def cleanup_milvus_data():
     """
-    Automatically clear Milvus collection data when services are available.
+    Automatically clear Milvus and PostgreSQL data when services are available.
 
-    This connects directly to Milvus and removes all data from the collection
-    while preserving the collection schema, ensuring clean test runs without
-    schema mismatch issues.
+    This connects directly to Milvus and PostgreSQL and removes all data from
+    collections/tables while preserving schemas, ensuring clean test runs.
     """
     def try_cleanup():
+        # Clean Milvus collections
         try:
             # Connect to Milvus with retry
             connections.connect(
@@ -39,16 +39,21 @@ def cleanup_milvus_data():
                 timeout=5
             )
 
-            # Check if collection exists and delete all data
+            # Clean up Milvus collection
             collection_name = "timberline_logs"
-            collection = Collection(collection_name, using="cleanup")
-
-            # Get count before cleanup
-            collection.load()
-            # Delete all entities (keeping schema)
-            collection.delete(expr="id >= 0")  # Delete all records
-            collection.flush()
-            print(f"✓ Cleared records from Milvus collection '{collection_name}'")
+            try:
+                # Check if collection exists
+                if utility.has_collection(collection_name, using="cleanup"):
+                    collection = Collection(collection_name, using="cleanup")
+                    collection.load()
+                    # Delete all entities (keeping schema)
+                    collection.delete(expr="id >= 0")  # Delete all records
+                    collection.flush()
+                    print(f"✓ Cleared records from Milvus collection '{collection_name}'")
+                else:
+                    print(f"⚠ Collection '{collection_name}' does not exist yet")
+            except Exception as e:
+                print(f"⚠ Could not clean collection '{collection_name}': {e}")
 
         except Exception as e:
             print(f"⚠ Milvus not available for cleanup: {e}")
@@ -57,6 +62,25 @@ def cleanup_milvus_data():
                 connections.disconnect("cleanup")
             except:
                 pass
+
+        # Clean PostgreSQL tables
+        try:
+            import psycopg2
+            conn = psycopg2.connect(
+                host="localhost",
+                port=5432,
+                database="timberline",
+                user="postgres",
+                password="postgres"
+            )
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM analysis_results")
+            conn.commit()
+            cursor.close()
+            conn.close()
+            print(f"✓ Cleared records from PostgreSQL table 'analysis_results'")
+        except Exception as e:
+            print(f"⚠ PostgreSQL not available for cleanup: {e}")
 
     # Try cleanup now (in case services are already running)
     try_cleanup()
@@ -246,12 +270,10 @@ def ai_analyzer_settings(milvus_host, milvus_port):
         'milvus_host': milvus_host,
         'milvus_port': int(milvus_port),
         'milvus_collection': 'timberline_logs',
+        'database_url': 'postgresql://postgres:postgres@localhost:5432/timberline',
         'analysis_window_hours': 24,
         'max_logs_per_analysis': 1000,
         'cluster_batch_size': 10,
-        'llm_endpoint': 'http://localhost:8101/v1',
-        'llm_model': 'llama-3.2-3b-instruct',
-        'llm_api_key': 'test-key',
         'report_output_dir': '/tmp/test-reports',
         'webhook_url': None
     }

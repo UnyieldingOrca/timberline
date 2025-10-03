@@ -103,7 +103,7 @@ def test_initialization_success(llm_settings):
         mock_chat_openai.assert_called_once_with(
             model='gpt-4o-mini',
             api_key='test-key-12345',
-            base_url=None,
+            base_url='https://openrouter.ai/api/v1',
             temperature=0.1,
             max_tokens=2000
         )

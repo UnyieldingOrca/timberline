@@ -12,6 +12,7 @@ def _get_default_settings() -> Dict[str, Any]:
         'milvus_host': os.getenv('MILVUS_HOST', 'milvus'),
         'milvus_port': int(os.getenv('MILVUS_PORT', '19530')),
         'milvus_collection': os.getenv('MILVUS_COLLECTION', 'timberline_logs'),
+        'database_url': os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/timberline'),
         'analysis_window_hours': int(os.getenv('ANALYSIS_WINDOW_HOURS', '24')),
         'max_logs_per_analysis': int(os.getenv('MAX_LOGS_PER_ANALYSIS', '10000')),
         'cluster_batch_size': int(os.getenv('CLUSTER_BATCH_SIZE', '50')),
@@ -32,6 +33,9 @@ class Settings:
     milvus_host: str = field(default_factory=lambda: _get_default_settings()['milvus_host'])
     milvus_port: int = field(default_factory=lambda: _get_default_settings()['milvus_port'])
     milvus_collection: str = field(default_factory=lambda: _get_default_settings()['milvus_collection'])
+
+    # PostgreSQL Database for Analysis Results
+    database_url: str = field(default_factory=lambda: _get_default_settings()['database_url'])
 
     # Analysis Settings
     analysis_window_hours: int = field(default_factory=lambda: _get_default_settings()['analysis_window_hours'])
@@ -98,6 +102,7 @@ class Settings:
         settings.milvus_host = config_dict.get('milvus_host', defaults['milvus_host'])
         settings.milvus_port = config_dict.get('milvus_port', defaults['milvus_port'])
         settings.milvus_collection = config_dict.get('milvus_collection', defaults['milvus_collection'])
+        settings.database_url = config_dict.get('database_url', defaults['database_url'])
         settings.analysis_window_hours = config_dict.get('analysis_window_hours', defaults['analysis_window_hours'])
         settings.max_logs_per_analysis = config_dict.get('max_logs_per_analysis', defaults['max_logs_per_analysis'])
         settings.cluster_batch_size = config_dict.get('cluster_batch_size', defaults['cluster_batch_size'])
@@ -122,6 +127,10 @@ class Settings:
 
         if not self.milvus_collection.strip():
             raise ValueError("Milvus collection name cannot be empty")
+
+        # Validate PostgreSQL settings
+        if not self.database_url or not self.database_url.strip():
+            raise ValueError("Database URL cannot be empty")
 
         # Validate analysis settings
         if self.analysis_window_hours <= 0:
@@ -167,6 +176,7 @@ class Settings:
             'milvus_host': self.milvus_host,
             'milvus_port': self.milvus_port,
             'milvus_collection': self.milvus_collection,
+            'database_url': '***' if self.database_url else None,  # Mask database URL
             'analysis_window_hours': self.analysis_window_hours,
             'max_logs_per_analysis': self.max_logs_per_analysis,
             'cluster_batch_size': self.cluster_batch_size,
@@ -183,4 +193,5 @@ class Settings:
         config = self.to_dict()
         # Remove sensitive fields
         config['openai_api_key'] = None
+        config['database_url'] = None
         return config

@@ -7,6 +7,7 @@ import pytest
 import time
 from datetime import date
 import json
+import psycopg2
 from .test_helpers import ingest_logs_via_stream
 
 
@@ -15,7 +16,8 @@ class TestAIAnalyzerIntegration:
     """Test AI Analyzer integration with the complete log pipeline."""
 
     def test_complete_ai_analysis_pipeline(self, log_generator, realistic_log_data,
-                                         http_retry, ingestor_url, ai_analyzer_engine, cleanup_milvus_data):
+                                         http_retry, ingestor_url, ai_analyzer_engine, cleanup_milvus_data,
+                                         milvus_host, milvus_port):
         """Test complete AI analysis pipeline with both file-based and direct ingestion."""
 
         # Step 1: Health check first
@@ -23,6 +25,7 @@ class TestAIAnalyzerIntegration:
         health_status = ai_analyzer_engine.health_check()
         print(f"Health check results: {health_status}")
         assert health_status['milvus'], "Milvus must be healthy for integration tests"
+        assert health_status['results_store'], "Results store must be healthy for integration tests"
 
         # Step 2: Generate file-based logs for Fluent Bit collector
         print("=== Generating log files for collector ===")
@@ -63,6 +66,10 @@ class TestAIAnalyzerIntegration:
         # Step 7: Validate and display results
         self._validate_analysis_result(result, analysis_date, expected_min_logs=100)
         self._display_analysis_results(result)
+
+        # Step 8: Verify results were stored in PostgreSQL
+        print("\n=== Verifying analysis results stored in PostgreSQL ===")
+        self._verify_postgres_storage(analysis_date, result)
 
     def _validate_analysis_result(self, result, expected_date, expected_min_logs=1):
         """Validate the analysis result structure and content."""
@@ -114,6 +121,50 @@ class TestAIAnalyzerIntegration:
         print(f"  {result.llm_summary}")
         print(f"\n✅ AI Analysis integration test completed successfully!")
 
+    def _verify_postgres_storage(self, analysis_date, result):
+        """Verify that analysis results were stored in PostgreSQL."""
+        try:
+            # Connect to PostgreSQL
+            conn = psycopg2.connect(
+                host="localhost",
+                port=5432,
+                database="timberline",
+                user="postgres",
+                password="postgres"
+            )
+            cursor = conn.cursor()
+
+            # Query for the analysis result
+            analysis_date_str = analysis_date.isoformat()
+            cursor.execute(
+                """
+                SELECT id, analysis_date, total_logs_processed, error_count, clusters_found
+                FROM analysis_results
+                WHERE analysis_date = %s
+                """,
+                (analysis_date_str,)
+            )
+
+            row = cursor.fetchone()
+
+            # Verify result was stored
+            assert row is not None, f"Analysis result for {analysis_date_str} should be stored in PostgreSQL"
+
+            stored_id, stored_date, stored_logs, stored_errors, stored_clusters = row
+
+            # Verify key fields match
+            assert stored_logs == result.total_logs_processed
+            assert stored_errors == result.error_count
+            assert stored_clusters == len(result.analyzed_clusters)
+
+            print(f"✅ Analysis results verified in PostgreSQL (ID: {stored_id})")
+
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()
+
     def test_ai_analyzer_health_check_only(self, ai_analyzer_engine):
         """Test AI Analyzer health check without full pipeline."""
         health_status = ai_analyzer_engine.health_check()
@@ -124,3 +175,95 @@ class TestAIAnalyzerIntegration:
         assert health_status['milvus'], "Milvus should be healthy"
         assert 'llm' in health_status, "LLM health should be checked"
         assert 'overall' in health_status, "Overall health should be reported"
+
+    def test_analysis_results_stored_in_postgres(self, log_generator, realistic_log_data,
+                                                  http_retry, ingestor_url, ai_analyzer_engine,
+                                                  cleanup_milvus_data):
+        """Test that analysis results are properly stored in PostgreSQL."""
+
+        # Step 1: Ingest realistic logs
+        print(f"=== Ingesting {len(realistic_log_data)} logs for analysis ===")
+        batch_size = 5
+        for i in range(0, len(realistic_log_data), batch_size):
+            batch = realistic_log_data[i:i + batch_size]
+            response = ingest_logs_via_stream(ingestor_url, batch, timeout=30)
+            assert response.status_code == 200, f"Log ingestion failed: {response.text}"
+
+        # Wait for logs to be indexed
+        time.sleep(5)
+
+        # Step 2: Run analysis
+        print("=== Running AI analysis ===")
+        analysis_date = date.today()
+        result = ai_analyzer_engine.analyze_daily_logs(analysis_date)
+
+        # Validate basic analysis completed
+        assert result.total_logs_processed > 0, "Should have processed logs"
+        print(f"Analysis completed: {result.total_logs_processed} logs processed")
+
+        # Step 3: Connect to PostgreSQL and verify analysis results are stored
+        print("=== Verifying analysis results in PostgreSQL ===")
+        conn = None
+        cursor = None
+        try:
+            conn = psycopg2.connect(
+                host="localhost",
+                port=5432,
+                database="timberline",
+                user="postgres",
+                password="postgres"
+            )
+            cursor = conn.cursor()
+
+            # Query for today's analysis result
+            analysis_date_str = analysis_date.isoformat()
+            cursor.execute(
+                """
+                SELECT
+                    id, analysis_date, total_logs_processed, error_count, warning_count,
+                    error_rate, clusters_found, top_issues_count, report_data, llm_summary
+                FROM analysis_results
+                WHERE analysis_date = %s
+                """,
+                (analysis_date_str,)
+            )
+
+            row = cursor.fetchone()
+
+            # Verify we found the analysis result
+            assert row is not None, f"Should have found analysis result for {analysis_date_str} in PostgreSQL"
+
+            (stored_id, stored_date, stored_logs, stored_errors, stored_warnings,
+             stored_error_rate, stored_clusters, stored_issues, stored_report, stored_summary) = row
+
+            print(f"\n📊 Analysis result stored in PostgreSQL:")
+            print(f"  Date: {stored_date}")
+            print(f"  Logs Processed: {stored_logs}")
+            print(f"  Errors: {stored_errors}")
+            print(f"  Warnings: {stored_warnings}")
+            print(f"  Clusters: {stored_clusters}")
+            print(f"  Top Issues: {stored_issues}")
+
+            # Verify the stored data matches the analysis result
+            assert stored_date == analysis_date_str
+            assert stored_logs == result.total_logs_processed
+            assert stored_errors == result.error_count
+            assert stored_warnings == result.warning_count
+            assert stored_clusters == len(result.analyzed_clusters)
+            assert stored_issues == len(result.top_issues)
+
+            # Verify report data is stored
+            assert stored_report is not None, "Report data should be stored"
+            assert isinstance(stored_report, dict), "Report data should be a dictionary"
+
+            # Verify LLM summary is stored
+            assert stored_summary is not None, "LLM summary should be stored"
+            assert len(stored_summary) > 0, "LLM summary should not be empty"
+
+            print("\n✅ Analysis results successfully verified in PostgreSQL!")
+
+        finally:
+            if cursor:
+                cursor.close()
+            if conn:
+                conn.close()

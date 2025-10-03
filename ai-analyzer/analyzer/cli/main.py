@@ -8,6 +8,7 @@ from ..analysis.engine import AnalysisEngine, AnalysisEngineError
 from ..config.settings import Settings
 from ..reporting.generator import ReportGenerator
 from ..storage.milvus_client import MilvusQueryEngine
+from ..storage.analysis_results_store import AnalysisResultsStore
 
 
 @click.group()
@@ -125,6 +126,7 @@ def health_check(ctx):
         components = [
             ("Milvus Database", health_status['milvus']),
             ("LLM Provider", health_status['llm']),
+            ("Results Store", health_status['results_store']),
             ("Report Generator", health_status['report_generator'])
         ]
 
@@ -211,6 +213,81 @@ def list_reports(ctx, limit):
     except Exception as e:
         logger.error(f"Failed to list reports: {e}")
         raise click.ClickException(f"Failed to list reports: {e}")
+
+
+@cli.command()
+@click.option('--limit', type=int, default=10, help='Number of recent results to show')
+@click.pass_context
+def list_stored_results(ctx, limit):
+    """List analysis results stored in Milvus"""
+    try:
+        settings = Settings.from_cli_overrides(ctx.obj.get('cli_overrides', {}))
+
+        results_store = AnalysisResultsStore(settings)
+        results = results_store.list_recent_analyses(limit=limit)
+
+        if not results:
+            click.echo("No analysis results found in Milvus.")
+            return
+
+        click.echo(f"\n📊 STORED ANALYSIS RESULTS ({len(results)} found)")
+        click.echo("="*80)
+
+        for result in results:
+            generated_at = datetime.fromtimestamp(result['generated_at'] / 1000)
+            click.echo(f"\nDate: {result['analysis_date']}")
+            click.echo(f"  Generated: {generated_at.isoformat()}")
+            click.echo(f"  Total Logs: {result['total_logs_processed']:,}")
+            click.echo(f"  Errors: {result['error_count']} ({result['error_rate']:.2f}%)")
+            click.echo(f"  Warnings: {result['warning_count']} ({result['warning_rate']:.2f}%)")
+            click.echo(f"  Clusters: {result['clusters_found']}")
+            click.echo(f"  Top Issues: {result['top_issues_count']}")
+            click.echo(f"  Execution Time: {result['execution_time']:.1f}s")
+
+    except Exception as e:
+        logger.error(f"Failed to list stored results: {e}")
+        raise click.ClickException(f"Failed to list stored results: {e}")
+
+
+@cli.command()
+@click.argument('analysis_date')
+@click.pass_context
+def get_stored_result(ctx, analysis_date):
+    """Get a specific analysis result from Milvus by date (YYYY-MM-DD)"""
+    try:
+        settings = Settings.from_cli_overrides(ctx.obj.get('cli_overrides', {}))
+
+        results_store = AnalysisResultsStore(settings)
+        result = results_store.get_analysis_by_date(analysis_date)
+
+        if not result:
+            click.echo(f"No analysis result found for date: {analysis_date}")
+            return
+
+        click.echo(f"\n📊 ANALYSIS RESULT FOR {analysis_date}")
+        click.echo("="*80)
+
+        generated_at = datetime.fromtimestamp(result['generated_at'] / 1000)
+        click.echo(f"Generated: {generated_at.isoformat()}")
+        click.echo(f"Total Logs: {result['total_logs_processed']:,}")
+        click.echo(f"Errors: {result['error_count']} ({result['error_rate']:.2f}%)")
+        click.echo(f"Warnings: {result['warning_count']} ({result['warning_rate']:.2f}%)")
+        click.echo(f"Clusters: {result['clusters_found']}")
+        click.echo(f"Top Issues: {result['top_issues_count']}")
+        click.echo(f"Execution Time: {result['execution_time']:.1f}s")
+        click.echo(f"\nLLM Summary:")
+        click.echo(result['llm_summary'])
+
+        # Optionally show report data
+        if 'report_data' in result:
+            click.echo("\n📄 Full report data available in JSON format")
+            if click.confirm("Show full JSON report?", default=False):
+                import json
+                click.echo(json.dumps(result['report_data'], indent=2))
+
+    except Exception as e:
+        logger.error(f"Failed to get stored result: {e}")
+        raise click.ClickException(f"Failed to get stored result: {e}")
 
 
 @cli.command()
