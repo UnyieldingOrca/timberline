@@ -424,3 +424,12 @@ Focus on:
                 raise LLMResponseError("Summary response too short")
 
             return summary
+
+    def generate_summary(self, prompt: str) -> str:
+        """Generate a simple text summary from a prompt"""
+        try:
+            response = self.call_llm(prompt, max_tokens=500)
+            return response.content.strip()
+        except Exception as e:
+            logger.error(f"Failed to generate summary: {e}")
+            return "Summary generation failed"

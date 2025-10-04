@@ -148,3 +148,4 @@ Fluent Bit provides built-in metrics and health endpoints for monitoring in prod
 Refer to SPEC.md for detailed specifications of planned components:
 - Web dashboard for visualization
 - Integration tests should go in our top level tests folder.
+- do not generate alembic migration scripts manually

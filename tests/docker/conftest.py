@@ -74,11 +74,13 @@ def cleanup_milvus_data():
                 password="postgres"
             )
             cursor = conn.cursor()
+            # Delete from both tables
+            cursor.execute("DELETE FROM analysis_jobs")
             cursor.execute("DELETE FROM analysis_results")
             conn.commit()
             cursor.close()
             conn.close()
-            print(f"✓ Cleared records from PostgreSQL table 'analysis_results'")
+            print(f"✓ Cleared records from PostgreSQL tables 'analysis_jobs' and 'analysis_results'")
         except Exception as e:
             print(f"⚠ PostgreSQL not available for cleanup: {e}")
 
@@ -165,7 +167,8 @@ def service_endpoints():
         ("MinIO", "http://localhost:8900/minio/health/live", 200),
         ("Log Ingestor Health", "http://localhost:8200/api/v1/healthz", 200),
         ("Log Ingestor Metrics", "http://localhost:8201/metrics", 200),
-        ("Fluent Bit Health", "http://localhost:8020/api/v1/health", 200)
+        ("Fluent Bit Health", "http://localhost:8020/api/v1/health", 200),
+        ("AI Analyzer API", "http://localhost:8400/health", 200)
     ]
 
 

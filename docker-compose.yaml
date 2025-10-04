@@ -213,6 +213,52 @@ services:
     networks:
       - timberline
 
+  ai-analyzer-api:
+    container_name: timberline-ai-analyzer-api
+    build:
+      context: ./ai-analyzer
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/timberline
+      - MILVUS_HOST=milvus
+      - MILVUS_PORT=19530
+      - MILVUS_COLLECTION=timberline_logs
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - OPENAI_MODEL=${OPENAI_MODEL}
+      - OPENAI_PROVIDER=${OPENAI_PROVIDER}
+      - STORE_RESULTS_IN_MILVUS=${STORE_RESULTS_IN_MILVUS}
+    ports:
+      - "8400:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      start_period: 5s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      postgres:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+      llama-cpp-chat:
+        condition: service_healthy
+    networks:
+      - timberline
+
+  web-ui:
+    container_name: timberline-web-ui
+    build:
+      context: ./web-ui
+      dockerfile: Dockerfile
+    ports:
+      - "8500:80"
+    depends_on:
+      ai-analyzer-api:
+        condition: service_healthy
+    networks:
+      - timberline
+
 networks:
   timberline:
     name: timberline
