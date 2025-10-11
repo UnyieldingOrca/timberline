@@ -1,0 +1,421 @@
+# Default values for timberline
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Fluent Bit log collector
+fluentBit:
+  enabled: true
+  image:
+    repository: fluent/fluent-bit
+    tag: "4.1.0"
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+  config:
+    logLevel: info
+    flush: 5
+    httpPort: 2020
+    samplingRate: 50  # Percentage of INFO/DEBUG logs to keep
+
+  service:
+    type: ClusterIP
+    port: 2020
+
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/master
+      effect: NoSchedule
+
+# Log Ingestor service
+logIngestor:
+  enabled: true
+  replicas: 2
+
+  image:
+    repository: timberline/log-ingestor
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+  config:
+    logLevel: warning
+    serverPort: 8080
+    metricsPort: 9092
+    batchSize: 100
+    batchTimeout: "5s"
+    maxRequestSize: 10485760
+    readTimeout: "10s"
+    writeTimeout: "10s"
+    rateLimitRps: 1000
+    similarityThreshold: 0.95
+    embeddingModel: "nomic-embed-text-v1.5"
+    embeddingDimension: 768
+
+  service:
+    type: ClusterIP
+    httpPort: 8080
+    metricsPort: 9092
+
+# Milvus vector database
+milvus:
+  enabled: true
+
+  # External Milvus cluster configuration
+  # If external.enabled is true, the internal Milvus deployment will be skipped
+  external:
+    enabled: false
+    # External Milvus gRPC endpoint (host:port)
+    host: ""
+    port: 19530
+
+  image:
+    repository: milvusdb/milvus
+    tag: "v2.6.2"
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "500m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+
+  service:
+    type: ClusterIP
+    grpcPort: 19530
+    metricsPort: 9091
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 10Gi
+
+# etcd for Milvus metadata storage
+etcd:
+  enabled: true
+
+  image:
+    repository: quay.io/coreos/etcd
+    tag: "v3.5.18"
+    pullPolicy: IfNotPresent
+
+  config:
+    autoCompactionMode: revision
+    autoCompactionRetention: "1000"
+    quotaBackendBytes: "4294967296"
+    snapshotCount: "50000"
+
+  service:
+    type: ClusterIP
+    port: 2379
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 8Gi
+
+# MinIO for Milvus object storage
+minio:
+  enabled: true
+
+  image:
+    repository: minio/minio
+    tag: "RELEASE.2024-05-28T17-19-04Z"
+    pullPolicy: IfNotPresent
+
+  auth:
+    accessKey: minioadmin
+    secretKey: minioadmin
+
+  service:
+    type: ClusterIP
+    apiPort: 9000
+    consolePort: 9001
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 20Gi
+
+# PostgreSQL database
+postgresql:
+  enabled: false
+
+  # External PostgreSQL configuration
+  # If external.enabled is true, the internal PostgreSQL deployment will be skipped
+  external:
+    enabled: false
+    host: ""
+    port: 5432
+    database: "timberline"
+    username: "timberline"
+    password: ""
+    # existingSecret: ""
+    # existingSecretPasswordKey: "password"
+
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+
+  auth:
+    database: timberline
+    username: timberline
+    password: timberline
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+  service:
+    type: ClusterIP
+    port: 5432
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 10Gi
+
+# LLM Chat Service (llama.cpp)
+llmChat:
+  enabled: true
+
+  # External LLM chat endpoint configuration
+  # If external.enabled is true, the internal deployment will be skipped
+  external:
+    enabled: false
+    # External endpoint URL (e.g., https://api.openai.com/v1/chat/completions)
+    endpoint: ""
+    # API key for external service (optional)
+    apiKey: ""
+    # existingSecret: ""
+    # existingSecretApiKeyKey: "api-key"
+
+  replicas: 1
+
+  image:
+    repository: ghcr.io/ggml-org/llama.cpp
+    tag: "server"
+    pullPolicy: IfNotPresent
+
+  model:
+    name: "Qwen3-0.6B-Q4_K_M.gguf"
+    url: "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf"
+    download: true
+
+  config:
+    port: 8001
+    threads: 4
+    ctxSize: 4096
+    temperature: 0.7
+    repeatPenalty: 1.1
+
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "3Gi"
+      cpu: "2000m"
+
+  service:
+    type: ClusterIP
+    port: 8001
+
+# Embedding Service (llama.cpp)
+embeddingService:
+  enabled: true
+
+  # External embedding endpoint configuration
+  # If external.enabled is true, the internal deployment will be skipped
+  external:
+    enabled: false
+    # External endpoint URL (e.g., https://api.openai.com/v1/embeddings)
+    endpoint: ""
+    # API key for external service (optional)
+    apiKey: ""
+    # existingSecret: ""
+    # existingSecretApiKeyKey: "api-key"
+
+  replicas: 3
+
+  image:
+    repository: ghcr.io/ggml-org/llama.cpp
+    tag: "server"
+    pullPolicy: IfNotPresent
+
+  model:
+    name: "nomic-embed-text-v1.5.f16.gguf"
+    url: "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.f16.gguf"
+    download: true
+
+  config:
+    port: 8000
+    threads: 8
+    ctxSize: 2048
+
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+
+  service:
+    type: ClusterIP
+    port: 8000
+
+# Attu - Milvus management UI
+attu:
+  enabled: true
+
+  replicas: 1
+
+  image:
+    repository: zilliz/attu
+    tag: "v2.4.8"
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "200m"
+
+  service:
+    type: ClusterIP
+    port: 3000
+
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+      # kubernetes.io/ingress.class: nginx
+      # cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: attu.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+      # - secretName: attu-tls
+      #   hosts:
+      #     - attu.example.com
+
+# AI Analyzer API - FastAPI service for log analysis
+aiAnalyzer:
+  enabled: true
+
+  replicas: 1
+
+  image:
+    repository: timberline/ai-analyzer
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+
+  config:
+    port: 8000
+    # PostgreSQL connection (uses internal or external based on postgresql.enabled)
+    databaseUrl: ""  # Auto-configured from postgresql settings if empty
+    # Milvus connection (uses internal or external based on milvus.enabled)
+    milvusCollection: "timberline_logs"
+    # OpenAI/LLM configuration
+    openaiApiKey: ""
+    openaiBaseUrl: ""  # Optional: for custom endpoints
+    openaiModel: ""  # e.g., gpt-4, gpt-3.5-turbo
+    openaiProvider: ""  # e.g., openai, azure
+    storeResultsInMilvus: "false"
+
+  service:
+    type: ClusterIP
+    port: 8000
+
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+      # kubernetes.io/ingress.class: nginx
+      # cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: api.timberline.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+      # - secretName: ai-analyzer-tls
+      #   hosts:
+      #     - api.timberline.example.com
+
+# Web UI - Frontend for Timberline
+webUI:
+  enabled: true
+
+  replicas: 2
+
+  image:
+    repository: timberline/web-ui
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+  config:
+    # API endpoint - auto-configured to use aiAnalyzer service if empty
+    apiEndpoint: ""
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+      # kubernetes.io/ingress.class: nginx
+      # cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: timberline.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+      # - secretName: web-ui-tls
+      #   hosts:
+      #     - timberline.example.com

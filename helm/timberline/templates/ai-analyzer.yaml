@@ -1,0 +1,87 @@
+{{- if .Values.aiAnalyzer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-analyzer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.aiAnalyzer.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.aiAnalyzer.replicas }}
+  selector:
+    matchLabels:
+      app: ai-analyzer
+  template:
+    metadata:
+      labels:
+        app: ai-analyzer
+        {{- include "timberline.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: ai-analyzer
+        image: {{ .Values.aiAnalyzer.image.repository }}:{{ .Values.aiAnalyzer.image.tag }}
+        imagePullPolicy: {{ .Values.aiAnalyzer.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.aiAnalyzer.config.port }}
+          name: http
+        env:
+        - name: DATABASE_URL
+          value: {{ .Values.aiAnalyzer.config.databaseUrl | default (include "timberline.postgresql.url" .) }}
+        - name: MILVUS_HOST
+          value: {{ include "timberline.milvus.host" . }}
+        - name: MILVUS_PORT
+          value: {{ include "timberline.milvus.port" . | quote }}
+        - name: MILVUS_COLLECTION
+          value: {{ .Values.aiAnalyzer.config.milvusCollection }}
+        {{- if .Values.aiAnalyzer.config.openaiApiKey }}
+        - name: OPENAI_API_KEY
+          value: {{ .Values.aiAnalyzer.config.openaiApiKey }}
+        {{- end }}
+        {{- if .Values.aiAnalyzer.config.openaiBaseUrl }}
+        - name: OPENAI_BASE_URL
+          value: {{ .Values.aiAnalyzer.config.openaiBaseUrl }}
+        {{- end }}
+        {{- if .Values.aiAnalyzer.config.openaiModel }}
+        - name: OPENAI_MODEL
+          value: {{ .Values.aiAnalyzer.config.openaiModel }}
+        {{- end }}
+        {{- if .Values.aiAnalyzer.config.openaiProvider }}
+        - name: OPENAI_PROVIDER
+          value: {{ .Values.aiAnalyzer.config.openaiProvider }}
+        {{- end }}
+        - name: STORE_RESULTS_IN_MILVUS
+          value: {{ .Values.aiAnalyzer.config.storeResultsInMilvus | quote }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.aiAnalyzer.config.port }}
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.aiAnalyzer.config.port }}
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.aiAnalyzer.resources | nindent 10 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-analyzer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.aiAnalyzer.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.aiAnalyzer.service.type }}
+  ports:
+  - port: {{ .Values.aiAnalyzer.service.port }}
+    targetPort: {{ .Values.aiAnalyzer.config.port }}
+    name: http
+    {{- if eq .Values.aiAnalyzer.service.type "NodePort" }}
+    nodePort: {{ .Values.aiAnalyzer.service.nodePort }}
+    {{- end }}
+  selector:
+    app: ai-analyzer
+{{- end }}

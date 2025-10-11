@@ -1,7 +1,7 @@
 # Timberline Log Analysis Platform
 # Top-level Makefile for building and testing the entire project
 
-.PHONY: help build test clean docker-up docker-down docker-test kind-setup kind-test kind-down install-deps lint fmt check
+.PHONY: help build test clean docker-up docker-down docker-test kind-setup kind-test test-integration test-kind kind-down install-deps lint fmt check
 
 # Default target - this ensures help is the default when running 'make' without arguments
 .DEFAULT_GOAL := help
@@ -26,18 +26,14 @@ docker-down: ## Stop Docker integration environment
 	@echo "🐳 Stopping Docker integration environment..."
 	docker compose down
 
-docker-test: docker-up test-docker ## Start Docker services and run integration tests
-	@echo "✅ Docker integration test complete"
-
-test-docker: ## Run Docker integration tests
+docker-test: ## Run Docker integration tests
 	@echo "🧪 Running Docker integration tests..."
 	./scripts/run-integration-tests.sh
 
 # Kind (Kubernetes in Docker) management
-kind-setup: ## Setup kind cluster for integration testing
+kind-up: ## Setup kind cluster for integration testing
 	@echo "🚀 Setting up kind cluster for integration testing..."
 	./scripts/kind-setup.sh
-
 
 kind-down: ## Delete kind cluster
 	@echo "🗑️ Deleting kind cluster..."

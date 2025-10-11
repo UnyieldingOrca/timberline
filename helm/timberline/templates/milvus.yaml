@@ -1,0 +1,112 @@
+{{- if and .Values.milvus.enabled (not .Values.milvus.external.enabled) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: milvus
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.milvus.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: milvus
+  template:
+    metadata:
+      labels:
+        app: milvus
+        {{- include "timberline.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsUser: 0
+        fsGroup: 0
+      containers:
+      - name: milvus
+        image: {{ .Values.milvus.image.repository }}:{{ .Values.milvus.image.tag }}
+        imagePullPolicy: {{ .Values.milvus.image.pullPolicy }}
+        command:
+        - milvus
+        - run
+        - standalone
+        env:
+        - name: MINIO_REGION
+          value: us-east-1
+        - name: ETCD_ENDPOINTS
+          value: etcd:2379
+        - name: MINIO_ADDRESS
+          value: minio:9000
+        ports:
+        - containerPort: {{ .Values.milvus.service.grpcPort }}
+          name: grpc
+        - containerPort: {{ .Values.milvus.service.metricsPort }}
+          name: metrics
+        volumeMounts:
+        - name: milvus-data
+          mountPath: /var/lib/milvus
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: {{ .Values.milvus.service.metricsPort }}
+          initialDelaySeconds: 90
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: {{ .Values.milvus.service.metricsPort }}
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.milvus.resources | nindent 10 }}
+      volumes:
+      - name: milvus-data
+        {{- if .Values.milvus.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: milvus-pvc
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+---
+{{- if .Values.milvus.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: milvus-pvc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.milvus.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.milvus.persistence.storageClass }}
+  storageClassName: {{ .Values.milvus.persistence.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.milvus.persistence.size }}
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: milvus
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.milvus.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.milvus.service.type }}
+  ports:
+  - port: {{ .Values.milvus.service.grpcPort }}
+    targetPort: {{ .Values.milvus.service.grpcPort }}
+    name: grpc
+    {{- if eq .Values.milvus.service.type "NodePort" }}
+    nodePort: {{ .Values.milvus.service.grpcNodePort }}
+    {{- end }}
+  - port: {{ .Values.milvus.service.metricsPort }}
+    targetPort: {{ .Values.milvus.service.metricsPort }}
+    name: metrics
+    {{- if eq .Values.milvus.service.type "NodePort" }}
+    nodePort: {{ .Values.milvus.service.metricsNodePort }}
+    {{- end }}
+  selector:
+    app: milvus
+{{- end }}

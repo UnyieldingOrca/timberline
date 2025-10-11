@@ -50,6 +50,14 @@ nodes:
     - containerPort: 30020
       hostPort: 9020
       protocol: TCP
+    # AI Analyzer API
+    - containerPort: 30400
+      hostPort: 9400
+      protocol: TCP
+    # Web UI
+    - containerPort: 30500
+      hostPort: 9500
+      protocol: TCP
   - role: worker
     labels:
       worker-type: compute

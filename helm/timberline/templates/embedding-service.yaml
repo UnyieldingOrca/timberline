@@ -1,0 +1,100 @@
+{{- if and .Values.embeddingService.enabled (not .Values.embeddingService.external.enabled) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llama-cpp-embedding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.embeddingService.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.embeddingService.replicas }}
+  selector:
+    matchLabels:
+      app: llama-cpp-embedding
+  template:
+    metadata:
+      labels:
+        app: llama-cpp-embedding
+        {{- include "timberline.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- if .Values.embeddingService.model.download }}
+      initContainers:
+      - name: download-model
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          if [ ! -f /models/{{ .Values.embeddingService.model.name }} ]; then
+            echo "Downloading embedding model..."
+            wget -O /models/{{ .Values.embeddingService.model.name }} \
+              {{ .Values.embeddingService.model.url }}
+          else
+            echo "Model already exists"
+          fi
+        volumeMounts:
+        - name: models
+          mountPath: /models
+      {{- end }}
+      containers:
+      - name: llama-cpp
+        image: {{ .Values.embeddingService.image.repository }}:{{ .Values.embeddingService.image.tag }}
+        imagePullPolicy: {{ .Values.embeddingService.image.pullPolicy }}
+        command:
+        - /app/llama-server
+        args:
+        - -m
+        - /models/{{ .Values.embeddingService.model.name }}
+        - --embeddings
+        - --host
+        - "0.0.0.0"
+        - --port
+        - {{ .Values.embeddingService.config.port | quote }}
+        - --threads
+        - {{ .Values.embeddingService.config.threads | quote }}
+        - --ctx-size
+        - {{ .Values.embeddingService.config.ctxSize | quote }}
+        - --log-disable
+        ports:
+        - containerPort: {{ .Values.embeddingService.config.port }}
+          name: http
+        volumeMounts:
+        - name: models
+          mountPath: /models
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.embeddingService.config.port }}
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.embeddingService.config.port }}
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.embeddingService.resources | nindent 10 }}
+      volumes:
+      - name: models
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llama-cpp-embedding
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.embeddingService.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.embeddingService.service.type }}
+  ports:
+  - port: {{ .Values.embeddingService.service.port }}
+    targetPort: {{ .Values.embeddingService.config.port }}
+    name: http
+    {{- if eq .Values.embeddingService.service.type "NodePort" }}
+    nodePort: {{ .Values.embeddingService.service.nodePort }}
+    {{- end }}
+  selector:
+    app: llama-cpp-embedding
+{{- end }}

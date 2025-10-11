@@ -1,20 +1,21 @@
+{{- if .Values.fluentBit.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: fluent-bit-config
-  namespace: timberline
+  namespace: {{ .Release.Namespace }}
   labels:
-    app: fluent-bit
+    {{- include "timberline.fluentBit.labels" . | nindent 4 }}
 data:
   fluent-bit.yaml: |
     service:
-      flush: 5
+      flush: {{ .Values.fluentBit.config.flush }}
       daemon: off
-      log_level: info
+      log_level: {{ .Values.fluentBit.config.logLevel }}
       parsers_file: parsers.yaml
       http_server: on
       http_listen: 0.0.0.0
-      http_port: 2020
+      http_port: {{ .Values.fluentBit.config.httpPort }}
       storage.metrics: on
       grace: 30
       health_check: on
@@ -65,7 +66,7 @@ data:
         - name: http
           match: '*'
           host: log-ingestor
-          port: 8080
+          port: {{ .Values.logIngestor.config.serverPort }}
           uri: /api/v1/logs/stream
           format: json_lines
           header: Content-Type application/x-ndjson
@@ -87,19 +88,19 @@ data:
             return 1, timestamp, record
         end
 
-        -- For INFO/DEBUG logs, sample at 50%
+        -- For INFO/DEBUG logs, sample based on configured rate
         if string.match(log_lower, "info") or
            string.match(log_lower, "debug") then
-            -- Sample 50% (keep 1 out of 2)
-            if math.random(2) == 1 then
+            -- Sample based on samplingRate (default 50%)
+            if math.random(100) <= {{ .Values.fluentBit.config.samplingRate }} then
                 return 1, timestamp, record
             else
                 return -1, timestamp, record  -- Drop the record
             end
         end
 
-        -- Keep logs without level indicators at 50% as well
-        if math.random(2) == 1 then
+        -- Keep logs without level indicators at configured rate as well
+        if math.random(100) <= {{ .Values.fluentBit.config.samplingRate }} then
             return 1, timestamp, record
         else
             return -1, timestamp, record
@@ -120,3 +121,4 @@ data:
         regex: '^\<(?<pri>[0-9]+)\>(?<time>[^ ]* {1,2}[^ ]* [^ ]*) (?<host>[^ ]*) (?<ident>[a-zA-Z0-9_\/\.\-]*)(?:\[(?<pid>[0-9]+)\])?(?:[^\:]*\:)? *(?<message>.*)$'
         time_key: time
         time_format: '%b %d %H:%M:%S'
+{{- end }}

@@ -1,0 +1,107 @@
+{{- if and .Values.minio.enabled (not .Values.milvus.external.enabled) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.minio.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+        {{- include "timberline.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: minio
+        image: {{ .Values.minio.image.repository }}:{{ .Values.minio.image.tag }}
+        imagePullPolicy: {{ .Values.minio.image.pullPolicy }}
+        command:
+        - minio
+        - server
+        - /minio_data
+        - --console-address
+        - ":9001"
+        env:
+        - name: MINIO_ACCESS_KEY
+          value: {{ .Values.minio.auth.accessKey }}
+        - name: MINIO_SECRET_KEY
+          value: {{ .Values.minio.auth.secretKey }}
+        ports:
+        - containerPort: {{ .Values.minio.service.apiPort }}
+          name: api
+        - containerPort: {{ .Values.minio.service.consolePort }}
+          name: console
+        volumeMounts:
+        - name: minio-data
+          mountPath: /minio_data
+        livenessProbe:
+          httpGet:
+            path: /minio/health/live
+            port: {{ .Values.minio.service.apiPort }}
+          initialDelaySeconds: 10
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /minio/health/ready
+            port: {{ .Values.minio.service.apiPort }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: minio-data
+        {{- if .Values.minio.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: minio-pvc
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+---
+{{- if .Values.minio.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-pvc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.minio.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.minio.persistence.storageClass }}
+  storageClassName: {{ .Values.minio.persistence.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.minio.persistence.size }}
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.minio.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.minio.service.type }}
+  ports:
+  - port: {{ .Values.minio.service.apiPort }}
+    targetPort: {{ .Values.minio.service.apiPort }}
+    name: api
+    {{- if eq .Values.minio.service.type "NodePort" }}
+    nodePort: {{ .Values.minio.service.apiNodePort }}
+    {{- end }}
+  - port: {{ .Values.minio.service.consolePort }}
+    targetPort: {{ .Values.minio.service.consolePort }}
+    name: console
+    {{- if eq .Values.minio.service.type "NodePort" }}
+    nodePort: {{ .Values.minio.service.consoleNodePort }}
+    {{- end }}
+  selector:
+    app: minio
+{{- end }}

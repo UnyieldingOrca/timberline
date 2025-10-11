@@ -1,0 +1,63 @@
+{{- if .Values.webUI.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-ui
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.webUI.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.webUI.replicas }}
+  selector:
+    matchLabels:
+      app: web-ui
+  template:
+    metadata:
+      labels:
+        app: web-ui
+        {{- include "timberline.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: web-ui
+        image: {{ .Values.webUI.image.repository }}:{{ .Values.webUI.image.tag }}
+        imagePullPolicy: {{ .Values.webUI.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.webUI.service.port }}
+          name: http
+        env:
+        - name: API_ENDPOINT
+          value: {{ .Values.webUI.config.apiEndpoint | default (include "timberline.aiAnalyzer.endpoint" .) }}
+        livenessProbe:
+          httpGet:
+            path: /
+            port: {{ .Values.webUI.service.port }}
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: {{ .Values.webUI.service.port }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.webUI.resources | nindent 10 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-ui
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.webUI.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.webUI.service.type }}
+  ports:
+  - port: {{ .Values.webUI.service.port }}
+    targetPort: {{ .Values.webUI.service.port }}
+    name: http
+    {{- if eq .Values.webUI.service.type "NodePort" }}
+    nodePort: {{ .Values.webUI.service.nodePort }}
+    {{- end }}
+  selector:
+    app: web-ui
+{{- end }}

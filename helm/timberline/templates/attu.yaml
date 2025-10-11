@@ -1,0 +1,51 @@
+{{- if .Values.attu.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: attu
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.attu.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.attu.replicas }}
+  selector:
+    matchLabels:
+      app: attu
+  template:
+    metadata:
+      labels:
+        app: attu
+        {{- include "timberline.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: attu
+        image: {{ .Values.attu.image.repository }}:{{ .Values.attu.image.tag }}
+        imagePullPolicy: {{ .Values.attu.image.pullPolicy }}
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: MILVUS_URL
+          value: {{ include "timberline.milvus.host" . }}:{{ include "timberline.milvus.port" . }}
+        resources:
+          {{- toYaml .Values.attu.resources | nindent 10 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: attu
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.attu.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.attu.service.type }}
+  ports:
+  - port: {{ .Values.attu.service.port }}
+    targetPort: 3000
+    name: http
+    {{- if eq .Values.attu.service.type "NodePort" }}
+    nodePort: {{ .Values.attu.service.nodePort }}
+    {{- end }}
+  selector:
+    app: attu
+{{- end }}

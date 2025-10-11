@@ -1,0 +1,97 @@
+{{- if .Values.logIngestor.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: log-ingestor
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.logIngestor.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.logIngestor.replicas }}
+  selector:
+    matchLabels:
+      app: log-ingestor
+  template:
+    metadata:
+      labels:
+        app: log-ingestor
+        {{- include "timberline.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: log-ingestor
+        image: {{ .Values.logIngestor.image.repository }}:{{ .Values.logIngestor.image.tag }}
+        imagePullPolicy: {{ .Values.logIngestor.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.logIngestor.config.serverPort }}
+          name: http
+        - containerPort: {{ .Values.logIngestor.config.metricsPort }}
+          name: metrics
+        env:
+        - name: SERVER_PORT
+          value: {{ .Values.logIngestor.config.serverPort | quote }}
+        - name: LOG_LEVEL
+          value: {{ .Values.logIngestor.config.logLevel }}
+        - name: MILVUS_ADDRESS
+          value: {{ include "timberline.milvus.address" . }}
+        - name: EMBEDDING_ENDPOINT
+          value: {{ include "timberline.embedding.endpoint" . }}
+        - name: EMBEDDING_MODEL
+          value: {{ .Values.logIngestor.config.embeddingModel }}
+        - name: EMBEDDING_DIMENSION
+          value: {{ .Values.logIngestor.config.embeddingDimension | quote }}
+        - name: BATCH_SIZE
+          value: {{ .Values.logIngestor.config.batchSize | quote }}
+        - name: BATCH_TIMEOUT
+          value: {{ .Values.logIngestor.config.batchTimeout }}
+        - name: MAX_REQUEST_SIZE
+          value: {{ .Values.logIngestor.config.maxRequestSize | quote }}
+        - name: METRICS_PORT
+          value: {{ .Values.logIngestor.config.metricsPort | quote }}
+        - name: READ_TIMEOUT
+          value: {{ .Values.logIngestor.config.readTimeout }}
+        - name: WRITE_TIMEOUT
+          value: {{ .Values.logIngestor.config.writeTimeout }}
+        - name: RATE_LIMIT_RPS
+          value: {{ .Values.logIngestor.config.rateLimitRps | quote }}
+        - name: SIMILARITY_THRESHOLD
+          value: {{ .Values.logIngestor.config.similarityThreshold | quote }}
+        livenessProbe:
+          httpGet:
+            path: /api/v1/healthz
+            port: {{ .Values.logIngestor.config.serverPort }}
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/v1/ready
+            port: {{ .Values.logIngestor.config.serverPort }}
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        resources:
+          {{- toYaml .Values.logIngestor.resources | nindent 10 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: log-ingestor
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.logIngestor.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.logIngestor.service.type }}
+  ports:
+  - port: {{ .Values.logIngestor.service.httpPort }}
+    targetPort: {{ .Values.logIngestor.config.serverPort }}
+    name: http
+    {{- if eq .Values.logIngestor.service.type "NodePort" }}
+    nodePort: {{ .Values.logIngestor.service.httpNodePort }}
+    {{- end }}
+  - port: {{ .Values.logIngestor.service.metricsPort }}
+    targetPort: {{ .Values.logIngestor.config.metricsPort }}
+    name: metrics
+    {{- if eq .Values.logIngestor.service.type "NodePort" }}
+    nodePort: {{ .Values.logIngestor.service.metricsNodePort }}
+    {{- end }}
+  selector:
+    app: log-ingestor
+{{- end }}

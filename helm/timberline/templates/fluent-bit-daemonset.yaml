@@ -1,10 +1,11 @@
+{{- if .Values.fluentBit.enabled }}
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: fluent-bit
-  namespace: timberline
+  namespace: {{ .Release.Namespace }}
   labels:
-    app: fluent-bit
+    {{- include "timberline.fluentBit.labels" . | nindent 4 }}
 spec:
   selector:
     matchLabels:
@@ -13,18 +14,20 @@ spec:
     metadata:
       labels:
         app: fluent-bit
+        {{- include "timberline.selectorLabels" . | nindent 8 }}
     spec:
       serviceAccountName: fluent-bit
       containers:
       - name: fluent-bit
-        image: fluent/fluent-bit:4.1.0
+        image: {{ .Values.fluentBit.image.repository }}:{{ .Values.fluentBit.image.tag }}
+        imagePullPolicy: {{ .Values.fluentBit.image.pullPolicy }}
         command:
           - /fluent-bit/bin/fluent-bit
         args:
           - -c
           - /fluent-bit/etc/fluent-bit.yaml
         ports:
-        - containerPort: 2020
+        - containerPort: {{ .Values.fluentBit.config.httpPort }}
           name: http
         env:
         - name: FLUENT_BIT_NODE_NAME
@@ -55,22 +58,17 @@ spec:
           mountPath: /dev/kmsg
           readOnly: true
         resources:
-          requests:
-            memory: "128Mi"
-            cpu: "100m"
-          limits:
-            memory: "256Mi"
-            cpu: "200m"
+          {{- toYaml .Values.fluentBit.resources | nindent 10 }}
         livenessProbe:
           httpGet:
             path: /api/v1/health
-            port: 2020
+            port: {{ .Values.fluentBit.config.httpPort }}
           initialDelaySeconds: 30
           periodSeconds: 30
         readinessProbe:
           httpGet:
             path: /api/v1/health
-            port: 2020
+            port: {{ .Values.fluentBit.config.httpPort }}
           initialDelaySeconds: 10
           periodSeconds: 10
       terminationGracePeriodSeconds: 10
@@ -90,25 +88,27 @@ spec:
       - name: dmesg
         hostPath:
           path: /dev/kmsg
+      {{- with .Values.fluentBit.tolerations }}
       tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        effect: NoSchedule
-      - key: node-role.kubernetes.io/master
-        effect: NoSchedule
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: fluent-bit
-  namespace: timberline
+  namespace: {{ .Release.Namespace }}
   labels:
-    app: fluent-bit
+    {{- include "timberline.fluentBit.labels" . | nindent 4 }}
 spec:
+  type: {{ .Values.fluentBit.service.type }}
   ports:
-  - port: 2020
-    targetPort: 2020
+  - port: {{ .Values.fluentBit.service.port }}
+    targetPort: {{ .Values.fluentBit.config.httpPort }}
     name: http
-    nodePort: 30020
+    {{- if eq .Values.fluentBit.service.type "NodePort" }}
+    nodePort: {{ .Values.fluentBit.service.nodePort }}
+    {{- end }}
   selector:
     app: fluent-bit
-  type: NodePort
+{{- end }}

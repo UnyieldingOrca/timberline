@@ -1,0 +1,105 @@
+{{- if and .Values.etcd.enabled (not .Values.milvus.external.enabled) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etcd
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.etcd.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: etcd
+  template:
+    metadata:
+      labels:
+        app: etcd
+        {{- include "timberline.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: etcd
+        image: {{ .Values.etcd.image.repository }}:{{ .Values.etcd.image.tag }}
+        imagePullPolicy: {{ .Values.etcd.image.pullPolicy }}
+        command:
+        - etcd
+        - --advertise-client-urls=http://etcd:2379
+        - --listen-client-urls=http://0.0.0.0:2379
+        - --data-dir=/etcd
+        env:
+        - name: ETCD_AUTO_COMPACTION_MODE
+          value: {{ .Values.etcd.config.autoCompactionMode }}
+        - name: ETCD_AUTO_COMPACTION_RETENTION
+          value: {{ .Values.etcd.config.autoCompactionRetention | quote }}
+        - name: ETCD_QUOTA_BACKEND_BYTES
+          value: {{ .Values.etcd.config.quotaBackendBytes | quote }}
+        - name: ETCD_SNAPSHOT_COUNT
+          value: {{ .Values.etcd.config.snapshotCount | quote }}
+        ports:
+        - containerPort: 2379
+          name: client
+        - containerPort: 2380
+          name: peer
+        volumeMounts:
+        - name: etcd-data
+          mountPath: /etcd
+        livenessProbe:
+          exec:
+            command:
+            - etcdctl
+            - endpoint
+            - health
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          exec:
+            command:
+            - etcdctl
+            - endpoint
+            - health
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: etcd-data
+        {{- if .Values.etcd.persistence.enabled }}
+        persistentVolumeClaim:
+          claimName: etcd-pvc
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+---
+{{- if .Values.etcd.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: etcd-pvc
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.etcd.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.etcd.persistence.storageClass }}
+  storageClassName: {{ .Values.etcd.persistence.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.etcd.persistence.size }}
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: etcd
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.etcd.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.etcd.service.type }}
+  ports:
+  - port: {{ .Values.etcd.service.port }}
+    targetPort: 2379
+    name: client
+  selector:
+    app: etcd
+{{- end }}

@@ -1,0 +1,42 @@
+{{- if and .Values.webUI.enabled .Values.webUI.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-ui
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "timberline.webUI.labels" . | nindent 4 }}
+  {{- with .Values.webUI.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.webUI.ingress.className }}
+  ingressClassName: {{ .Values.webUI.ingress.className }}
+  {{- end }}
+  {{- if .Values.webUI.ingress.tls }}
+  tls:
+    {{- range .Values.webUI.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.webUI.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: web-ui
+                port:
+                  number: {{ $.Values.webUI.service.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}

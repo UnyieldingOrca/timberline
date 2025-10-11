@@ -1,6 +1,6 @@
 #!/bin/bash
 # Setup kind cluster for Timberline integration testing
-# This script creates a kind cluster and deploys all necessary services
+# This script creates a kind cluster and deploys all necessary services using Helm
 
 set -e
 
@@ -12,6 +12,8 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 CLUSTER_NAME="timberline-test"
+NAMESPACE="timberline"
+RELEASE_NAME="timberline"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
@@ -27,6 +29,12 @@ fi
 # Check if kubectl is installed
 if ! command -v kubectl &> /dev/null; then
     echo -e "${RED}Error: kubectl not found. Please install kubectl${NC}"
+    exit 1
+fi
+
+# Check if helm is installed
+if ! command -v helm &> /dev/null; then
+    echo -e "${RED}Error: helm not found. Please install helm: https://helm.sh/docs/intro/install/${NC}"
     exit 1
 fi
 
@@ -82,55 +90,48 @@ cd "$PROJECT_ROOT"
 echo "Building log-ingestor image..."
 docker build -t timberline/log-ingestor:latest ./log-ingestor
 
+# Build ai-analyzer image
+echo "Building ai-analyzer image..."
+docker build -t timberline/ai-analyzer:latest ./ai-analyzer
+
+# Build web-ui image
+echo "Building web-ui image..."
+docker build -t timberline/web-ui:latest ./web-ui
+
 # Load images into kind cluster
 echo "Loading images into kind cluster..."
 kind load docker-image timberline/log-ingestor:latest --name $CLUSTER_NAME
+kind load docker-image timberline/ai-analyzer:latest --name $CLUSTER_NAME
+kind load docker-image timberline/web-ui:latest --name $CLUSTER_NAME
 
-# Deploy Kubernetes resources
-echo -e "${BLUE}Deploying all Kubernetes resources...${NC}"
+# Deploy Kubernetes resources using Helm
+echo -e "${BLUE}Deploying Timberline using Helm...${NC}"
 
-# Create namespace first
-kubectl apply -f "$PROJECT_ROOT/k8s/namespace.yaml"
+# Create namespace
+kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
 
-# Apply all manifests at once
-echo "Applying all Kubernetes manifests..."
-kubectl apply -f "$PROJECT_ROOT/k8s/milvus/"
-kubectl apply -f "$PROJECT_ROOT/k8s/llm/"
-kubectl apply -f "$PROJECT_ROOT/k8s/log-ingestor/"
-kubectl apply -f "$PROJECT_ROOT/k8s/fluent-bit/"
-kubectl apply -f "$PROJECT_ROOT/k8s/attu/"
+# Check if release already exists
+if helm list -n $NAMESPACE | grep -q "^${RELEASE_NAME}"; then
+    echo "Helm release $RELEASE_NAME already exists. Upgrading..."
+    helm upgrade $RELEASE_NAME "$PROJECT_ROOT/helm/timberline" \
+        --namespace $NAMESPACE \
+        --values "$SCRIPT_DIR/values-kind.yaml" \
+        --wait \
+        --timeout 15m
+else
+    echo "Installing Helm chart..."
+    helm install $RELEASE_NAME "$PROJECT_ROOT/helm/timberline" \
+        --namespace $NAMESPACE \
+        --create-namespace \
+        --values "$SCRIPT_DIR/values-kind.yaml" \
+        --wait \
+        --timeout 15m
+fi
 
-# Force restart log-ingestor deployment to pick up new image
-echo -e "${BLUE}Restarting log-ingestor deployment to pick up new image...${NC}"
-kubectl rollout restart deployment/log-ingestor -n timberline
+echo -e "${YELLOW}Waiting for all pods to be ready...${NC}"
 
-echo -e "${YELLOW}Waiting for all deployments to be ready...${NC}"
-
-# Wait for infrastructure services first (they're dependencies)
-echo "Waiting for infrastructure services..."
-wait_for_deployment timberline etcd 120
-wait_for_deployment timberline minio 120
-
-# Wait for Milvus (depends on etcd and minio)
-echo "Waiting for Milvus..."
-wait_for_deployment timberline milvus 300
-
-# Wait for LLM services (long timeout for model downloads)
-echo "Waiting for LLM services (model downloads may take time)..."
-wait_for_deployment timberline llama-cpp-embedding 600
-wait_for_deployment timberline llama-cpp-chat 600
-
-# Wait for log-ingestor (depends on milvus and embedding service)
-echo "Waiting for log-ingestor..."
-wait_for_deployment timberline log-ingestor 120
-
-# Wait for Fluent Bit DaemonSet
-echo "Waiting for Fluent Bit..."
-wait_for_pod timberline "app=fluent-bit" 120
-
-# Wait for Attu (optional UI)
-echo "Waiting for Attu..."
-wait_for_deployment timberline attu 120
+# Wait for all pods to be ready
+kubectl wait --for=condition=ready pod --all -n $NAMESPACE --timeout=600s || true
 
 # Health check all services
 echo -e "${BLUE}Running health checks...${NC}"
@@ -144,6 +145,8 @@ services=(
     "http://localhost:9201/metrics Log_Ingestor_Metrics"
     "http://localhost:9020/api/v1/health Fluent_Bit"
     "http://localhost:9300 Attu_UI"
+    "http://localhost:9400/health AI_Analyzer_API"
+    "http://localhost:9500 Web_UI"
 )
 
 echo "Checking service health..."
@@ -166,19 +169,27 @@ echo "  Name: $CLUSTER_NAME"
 echo "  Context: kind-$CLUSTER_NAME"
 echo ""
 echo "Service endpoints:"
+echo "  Web UI: http://localhost:9500"
+echo "  AI Analyzer API: http://localhost:9400"
 echo "  Log Ingestor API: http://localhost:9200"
 echo "  Log Ingestor Metrics: http://localhost:9201/metrics"
+echo "  Attu UI (Milvus): http://localhost:9300"
 echo "  Milvus gRPC: localhost:9530"
 echo "  Milvus Metrics: http://localhost:9091/healthz"
 echo "  Embedding Service: http://localhost:9100"
 echo "  Chat Service: http://localhost:9101"
 echo "  MinIO API: http://localhost:9900"
 echo "  MinIO Console: http://localhost:9901"
-echo "  Attu UI: http://localhost:9300"
 echo "  Fluent Bit Metrics: http://localhost:9020"
+echo "  PostgreSQL: localhost:5432"
 echo ""
 echo "To run integration tests:"
-echo "  ./scripts/run-kind-integration-tests.sh"
+echo "  make test-integration"
+echo "  # or: pytest tests/docker/ -v"
 echo ""
 echo "To delete cluster:"
-echo "  kind delete cluster --name $CLUSTER_NAME"
+echo "  make kind-down"
+echo "  # or: kind delete cluster --name $CLUSTER_NAME"
+echo ""
+echo "To upgrade deployment:"
+echo "  helm upgrade $RELEASE_NAME helm/timberline -n $NAMESPACE"

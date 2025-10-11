@@ -1,0 +1,86 @@
+# Kind-specific values for Timberline
+# This file overrides the default values.yaml for kind cluster testing
+# Usage: helm install timberline ./helm/timberline -f ./scripts/values-kind.yaml
+
+# Use NodePort services for easy access in kind
+fluentBit:
+  service:
+    type: NodePort
+    nodePort: 30020
+
+logIngestor:
+  image:
+    pullPolicy: Never  # Use local images loaded into kind
+
+  service:
+    type: NodePort
+    httpNodePort: 30200
+    metricsNodePort: 30201
+
+milvus:
+  service:
+    type: NodePort
+    grpcNodePort: 30530
+    metricsNodePort: 30091
+
+  # Disable persistence in kind (use emptyDir)
+  persistence:
+    enabled: false
+
+etcd:
+  # Disable persistence in kind (use emptyDir)
+  persistence:
+    enabled: false
+
+minio:
+  service:
+    type: NodePort
+    apiNodePort: 30900
+    consoleNodePort: 30901
+
+  # Disable persistence in kind (use emptyDir)
+  persistence:
+    enabled: false
+
+llmChat:
+  service:
+    type: NodePort
+    nodePort: 30101
+
+embeddingService:
+  service:
+    type: NodePort
+    nodePort: 30100
+
+attu:
+  service:
+    type: NodePort
+    nodePort: 30300
+
+postgresql:
+  enabled: true
+  persistence:
+    enabled: false
+
+aiAnalyzer:
+  image:
+    pullPolicy: Never  # Use local images loaded into kind
+
+  config:
+    # Use internal llama.cpp chat service instead of OpenAI
+    openaiBaseUrl: "http://llama-cpp-chat:8001/v1"
+    openaiModel: "Qwen3-0.6B-Q4_K_M"
+    openaiProvider: "openai"
+    openaiApiKey: "dummy-key-for-local-llm"  # Required by validator but not used for local LLM
+
+  service:
+    type: NodePort
+    nodePort: 30400
+
+webUI:
+  image:
+    pullPolicy: Never  # Use local images loaded into kind
+
+  service:
+    type: NodePort
+    nodePort: 30500
