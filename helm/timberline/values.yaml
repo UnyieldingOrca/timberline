@@ -22,7 +22,7 @@ fluentBit:
     logLevel: info
     flush: 5
     httpPort: 2020
-    samplingRate: 50  # Percentage of INFO/DEBUG logs to keep
+    samplingRate: 10  # Percentage of INFO/DEBUG logs to keep
 
   service:
     type: ClusterIP
@@ -220,7 +220,7 @@ llmChat:
 
   model:
     name: "Qwen3-0.6B-Q4_K_M.gguf"
-    url: "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf"
+    repo: "unsloth/Qwen3-0.6B-GGUF"
     download: true
 
   config:
@@ -265,8 +265,8 @@ embeddingService:
     pullPolicy: IfNotPresent
 
   model:
+    repo: "nomic-ai/nomic-embed-text-v1.5-GGUF"
     name: "nomic-embed-text-v1.5.f16.gguf"
-    url: "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.f16.gguf"
     download: true
 
   config:

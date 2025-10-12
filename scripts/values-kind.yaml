@@ -17,6 +17,10 @@ logIngestor:
     httpNodePort: 30200
     metricsNodePort: 30201
 
+  config:
+    embeddingModel: "granite-embedding-30m-english"
+    embeddingDimension: 384
+
 milvus:
   service:
     type: NodePort
@@ -48,6 +52,11 @@ llmChat:
     nodePort: 30101
 
 embeddingService:
+  model:
+    repo: "bartowski/granite-embedding-30m-english-GGUF"
+    name: "granite-embedding-30m-english-Q8_0.gguf"
+    download: true
+
   service:
     type: NodePort
     nodePort: 30100

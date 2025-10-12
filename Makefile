@@ -42,3 +42,13 @@ kind-down: ## Delete kind cluster
 install-test-deps: ## Install Python test dependencies
 	@echo "📦 Installing Python test dependencies..."
 	pip install -r requirements-test.txt
+
+kind-setup: kind-up download-models ## Setup kind cluster for integration testing (alias for kind-up)
+
+kind-test: kind-setup test-integration ## Setup kind cluster and run integration tests
+
+test-integration: ## Run integration tests against existing kind cluster
+	@echo "🧪 Running integration tests against kind cluster..."
+	pytest tests/kind/ -v
+
+test-kind: test-integration ## Run integration tests against existing kind cluster (alias)

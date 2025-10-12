@@ -28,7 +28,7 @@ spec:
           if [ ! -f /models/{{ .Values.llmChat.model.name }} ]; then
             echo "Downloading chat model..."
             wget -O /models/{{ .Values.llmChat.model.name }} \
-              {{ .Values.llmChat.model.url }}
+              "https://huggingface.co/{{ .Values.llmChat.model.repo }}/resolve/main/{{ .Values.llmChat.model.name }}"
           else
             echo "Model already exists"
           fi

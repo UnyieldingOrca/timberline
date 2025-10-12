@@ -28,7 +28,7 @@ spec:
           if [ ! -f /models/{{ .Values.embeddingService.model.name }} ]; then
             echo "Downloading embedding model..."
             wget -O /models/{{ .Values.embeddingService.model.name }} \
-              {{ .Values.embeddingService.model.url }}
+              "https://huggingface.co/{{ .Values.embeddingService.model.repo }}/resolve/main/{{ .Values.embeddingService.model.name }}"
           else
             echo "Model already exists"
           fi
