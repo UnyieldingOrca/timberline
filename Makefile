@@ -1,7 +1,7 @@
 # Timberline Log Analysis Platform
 # Top-level Makefile for building and testing the entire project
 
-.PHONY: help build test clean docker-up docker-down docker-test kind-setup kind-test test-integration test-kind kind-down install-deps lint fmt check
+.PHONY: help build test clean docker-up docker-down docker-test kind-up kind-down kind-test test-integration install-test-deps
 
 # Default target - this ensures help is the default when running 'make' without arguments
 .DEFAULT_GOAL := help
@@ -31,24 +31,18 @@ docker-test: ## Run Docker integration tests
 	./scripts/run-integration-tests.sh
 
 # Kind (Kubernetes in Docker) management
-kind-up: ## Setup kind cluster for integration testing
-	@echo "🚀 Setting up kind cluster for integration testing..."
+kind-up: ## Start kind cluster for integration testing
+	@echo "🚀 Starting kind cluster for integration testing..."
 	./scripts/kind-setup.sh
 
-kind-down: ## Delete kind cluster
-	@echo "🗑️ Deleting kind cluster..."
+kind-down: ## Stop kind cluster
+	@echo "🗑️ Stopping kind cluster..."
 	kind delete cluster --name timberline-test
+
+kind-test:  ## Run integration tests against kind cluster
+	@echo "🧪 Running integration tests against kind cluster..."
+	pytest tests/kind/ -v
 
 install-test-deps: ## Install Python test dependencies
 	@echo "📦 Installing Python test dependencies..."
 	pip install -r requirements-test.txt
-
-kind-setup: kind-up download-models ## Setup kind cluster for integration testing (alias for kind-up)
-
-kind-test: kind-setup test-integration ## Setup kind cluster and run integration tests
-
-test-integration: ## Run integration tests against existing kind cluster
-	@echo "🧪 Running integration tests against kind cluster..."
-	pytest tests/kind/ -v
-
-test-kind: test-integration ## Run integration tests against existing kind cluster (alias)
