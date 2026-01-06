@@ -57,13 +57,12 @@ func TestLogEntryValidate(t *testing.T) {
 			errorMsg:    "message is required",
 		},
 		{
-			name: "Missing source",
+			name: "Valid log entry without source",
 			logEntry: LogEntry{
 				Timestamp: now,
 				Message:   "Test message",
 			},
-			expectError: true,
-			errorMsg:    "source is required",
+			expectError: false,
 		},
 		{
 			name: "Timestamp too far in future",

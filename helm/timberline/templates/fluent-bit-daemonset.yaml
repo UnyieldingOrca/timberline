@@ -12,6 +12,10 @@ spec:
       app: fluent-bit
   template:
     metadata:
+      {{- if .Values.fluentBit.config.excludeAnnotated }}
+      annotations:
+        fluentbit.io/exclude: "true"
+      {{- end }}
       labels:
         app: fluent-bit
         {{- include "timberline.selectorLabels" . | nindent 8 }}

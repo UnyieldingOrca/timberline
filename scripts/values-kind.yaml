@@ -8,6 +8,9 @@ fluentBit:
     type: NodePort
     nodePort: 30020
 
+  config:
+    samplingRate: 10
+
 logIngestor:
   image:
     pullPolicy: Never  # Use local images loaded into kind
@@ -20,6 +23,7 @@ logIngestor:
   config:
     embeddingModel: "granite-embedding-30m-english"
     embeddingDimension: 384
+    logLevel: debug
 
 milvus:
   service:

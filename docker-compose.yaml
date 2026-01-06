@@ -228,6 +228,8 @@ services:
       - OPENAI_MODEL=${OPENAI_MODEL}
       - OPENAI_PROVIDER=${OPENAI_PROVIDER}
       - STORE_RESULTS_IN_MILVUS=${STORE_RESULTS_IN_MILVUS}
+      - LOGURU_LEVEL=INFO
+      - LOG_FORMAT=json
     ports:
       - "8400:8000"
     healthcheck:

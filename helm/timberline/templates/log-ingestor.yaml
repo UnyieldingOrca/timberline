@@ -13,6 +13,10 @@ spec:
       app: log-ingestor
   template:
     metadata:
+      {{- if .Values.fluentBit.config.excludeAnnotated }}
+      annotations:
+        fluentbit.io/exclude: "true"
+      {{- end }}
       labels:
         app: log-ingestor
         {{- include "timberline.selectorLabels" . | nindent 8 }}

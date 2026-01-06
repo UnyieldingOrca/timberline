@@ -89,9 +89,9 @@ func (fb *FluentBitLogEntry) transformToLogEntry() *models.LogEntry {
 		}
 	}
 
-	// Ensure source is set if not provided
+	// Set default source if not provided
 	if entry.Source == "" {
-		entry.Source = "fluent-bit"
+		entry.Source = "unknown"
 	}
 
 	return entry

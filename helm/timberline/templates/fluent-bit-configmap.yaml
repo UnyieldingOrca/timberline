@@ -28,7 +28,7 @@ data:
         - name: tail
           path: /var/log/containers/*.log
           path_key: filename
-          parser: docker
+          parser: cri
           tag: kube.*
           refresh_interval: 5
           rotate_wait: 30
@@ -45,17 +45,16 @@ data:
           kube_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
           kube_tag_prefix: kube.var.log.containers.
           k8s-logging.parser: on
-          k8s-logging.exclude: off
+          k8s-logging.exclude: {{ if .Values.fluentBit.config.excludeAnnotated }}on{{ else }}off{{ end }}
           annotations: on
           labels: on
-          owner_references: on
-          merge_log: off
-          keep_log: on
+          owner_references: off
+          namespace_labels: on
+          namespace_annotations: on
+          merge_log: on
+          merge_log_trim: on
+          keep_log: off
           buffer_size: 256k
-
-        - name: record_modifier
-          match: '*'
-          record: source fluent-bit
 
         - name: lua
           match: '*'
@@ -109,16 +108,21 @@ data:
 
   parsers.yaml: |
     parsers:
+      - name: json
+        format: json
+        time_key: time
+        time_format: '%Y-%m-%dT%H:%M:%S.%L%z'
+        time_keep: on
+    
       - name: docker
         format: json
         time_key: time
         time_format: '%Y-%m-%dT%H:%M:%S.%L'
         time_keep: on
-        decode_field_as: json log
-
-      - name: syslog
+      
+      - name: cri
         format: regex
-        regex: '^\<(?<pri>[0-9]+)\>(?<time>[^ ]* {1,2}[^ ]* [^ ]*) (?<host>[^ ]*) (?<ident>[a-zA-Z0-9_\/\.\-]*)(?:\[(?<pid>[0-9]+)\])?(?:[^\:]*\:)? *(?<message>.*)$'
+        regex: '^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>[^ ]*) (?<log>.*)$'
         time_key: time
-        time_format: '%b %d %H:%M:%S'
+        time_format: '%Y-%m-%dT%H:%M:%S.%L%z'
 {{- end }}

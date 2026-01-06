@@ -9,6 +9,7 @@ from ..config.settings import Settings
 from ..reporting.generator import ReportGenerator
 from ..storage.milvus_client import MilvusQueryEngine
 from ..storage.analysis_results_store import AnalysisResultsStore
+from ..logging_config import configure_logging
 
 
 @click.group()
@@ -26,13 +27,16 @@ from ..storage.analysis_results_store import AnalysisResultsStore
 def cli(ctx, verbose, quiet, **kwargs):
     """AI Log Analyzer - Kubernetes log analysis with AI insights"""
 
-    # Configure logging level
-    if quiet:
-        logger.remove()
-        logger.add(sys.stderr, level="ERROR")
-    elif verbose:
-        logger.remove()
-        logger.add(sys.stderr, level="DEBUG", format="{time} | {level} | {name}:{function}:{line} - {message}")
+    # Initialize settings to get log configuration
+    settings = Settings()
+
+    # Configure logging based on settings and CLI flags
+    configure_logging(
+        level=settings.log_level,
+        json_format=(settings.log_format == 'json'),
+        verbose=verbose,
+        quiet=quiet
+    )
 
     # Store CLI overrides in context for commands to use
     ctx.ensure_object(dict)

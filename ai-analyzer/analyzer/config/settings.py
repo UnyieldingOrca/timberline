@@ -21,7 +21,9 @@ def _get_default_settings() -> Dict[str, Any]:
         'openai_model': os.getenv('OPENAI_MODEL', 'gpt-4o-mini'),
         'openai_api_key': os.getenv('OPENAI_API_KEY'),
         'report_output_dir': os.getenv('REPORT_OUTPUT_DIR', '/app/reports'),
-        'webhook_url': os.getenv('WEBHOOK_URL')
+        'webhook_url': os.getenv('WEBHOOK_URL'),
+        'log_level': os.getenv('LOGURU_LEVEL', os.getenv('LOG_LEVEL', 'INFO')),
+        'log_format': os.getenv('LOG_FORMAT', 'json')
     }
 
 
@@ -51,6 +53,10 @@ class Settings:
     # Reporting
     report_output_dir: str = field(default_factory=lambda: _get_default_settings()['report_output_dir'])
     webhook_url: Optional[str] = field(default_factory=lambda: _get_default_settings()['webhook_url'])
+
+    # Logging
+    log_level: str = field(default_factory=lambda: _get_default_settings()['log_level'])
+    log_format: Literal['json', 'text'] = field(default_factory=lambda: _get_default_settings()['log_format'])
 
     def __post_init__(self):
         """Validate settings after initialization"""
@@ -112,6 +118,8 @@ class Settings:
         settings.openai_api_key = config_dict.get('openai_api_key', defaults['openai_api_key'])
         settings.report_output_dir = config_dict.get('report_output_dir', defaults['report_output_dir'])
         settings.webhook_url = config_dict.get('webhook_url', defaults['webhook_url'])
+        settings.log_level = config_dict.get('log_level', defaults['log_level'])
+        settings.log_format = config_dict.get('log_format', defaults['log_format'])
 
         settings.validate()
         return settings
@@ -156,6 +164,13 @@ class Settings:
         if not self.report_output_dir.strip():
             raise ValueError("Report output directory cannot be empty")
 
+        # Validate logging settings
+        if self.log_level.upper() not in ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']:
+            raise ValueError("Log level must be one of: DEBUG, INFO, WARNING, ERROR, CRITICAL")
+
+        if self.log_format not in ['json', 'text']:
+            raise ValueError("Log format must be 'json' or 'text'")
+
     @property
     def milvus_connection_string(self) -> str:
         """Get Milvus connection string"""
@@ -185,7 +200,9 @@ class Settings:
             'openai_model': self.openai_model,
             'openai_api_key': '***' if self.openai_api_key else None,  # Mask API key
             'report_output_dir': self.report_output_dir,
-            'webhook_url': self.webhook_url
+            'webhook_url': self.webhook_url,
+            'log_level': self.log_level,
+            'log_format': self.log_format
         }
 
     def get_sanitized_dict(self) -> Dict[str, Any]:

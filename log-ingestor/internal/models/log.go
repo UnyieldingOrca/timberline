@@ -11,7 +11,7 @@ import (
 type LogEntry struct {
 	Timestamp      int64                  `json:"timestamp"`          // Unix timestamp in milliseconds
 	Message        string                 `json:"message"`            // The actual log message
-	Source         string                 `json:"source"`             // Source identifier (service, application, etc.)
+	Source         string                 `json:"source,omitempty"`   // Optional source identifier (service, application, etc.)
 	Metadata       map[string]interface{} `json:"metadata,omitempty"` // Generic metadata for additional context
 	DuplicateCount int64                  `json:"duplicate_count"`    // Number of duplicate occurrences of this log
 }
@@ -46,9 +46,6 @@ func (l *LogEntry) Validate() error {
 	}
 	if l.Message == "" {
 		return errors.New("message is required")
-	}
-	if l.Source == "" {
-		return errors.New("source is required")
 	}
 
 	// Validate timestamp is reasonable (not in the future by more than 1 hour, not older than 10 years)

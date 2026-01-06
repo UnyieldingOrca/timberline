@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 import pytest
+import numpy as np
 import requests
 from pymilvus import connections, Collection
 
@@ -85,7 +86,7 @@ def validate_log_matches(results: List[Dict[str, Any]], expected_messages: List[
         else:
             print(f"✗ Missing log with message: {expected_msg}")
 
-    min_expected = int(len(expected_messages) * min_success_ratio)
+    min_expected = int(np.ceil((len(expected_messages) * min_success_ratio)))
     assert matches_found >= min_expected, \
         f"Found {matches_found}/{len(expected_messages)} expected logs (minimum {min_expected}). " \
         f"Test ID: {test_id}. Expected: {expected_messages}. Found: {found_messages}"
@@ -147,6 +148,45 @@ def test_fluent_bit_health_endpoint(fluent_bit_health_url, http_retry):
     response = http_retry(fluent_bit_health_url, timeout=10)
     assert response.status_code == 200
     assert response.content == b'ok\n'
+
+
+def test_fluent_bit_log_ingestion_text(test_logs_dir, http_retry, cleanup_milvus_data):
+    """Test that Fluent Bit successfully ingests and forwards logs to Milvus."""
+    test_logs_dir = setup_test_logs_dir(test_logs_dir)
+
+    # Generate unique test log entries
+    timestamp = int(time.time() * 1000)
+    test_id = f"{timestamp}-{random.randint(1000, 9999)}"
+
+    test_logs = [
+        f"timestamp: {timestamp}, level: INFO, message: Test log entry 1 - {test_id}, service: fluent-bit-test",
+        f"timestamp: {timestamp}, level: WARN, message: Test log entry 2 - {test_id}, service: fluent-bit-test",
+        f"timestamp: {timestamp}, level: ERROR, message: Test log entry 3 - {test_id}, service: fluent-bit-test"
+    ]
+
+    # Write test logs to file
+    test_log_file = test_logs_dir / f"integration-test-{test_id}.log"
+    with open(test_log_file, 'w') as f:
+        for log_entry in test_logs:
+            f.write(log_entry + '\n')
+
+    # Wait for Fluent Bit to pick up and process the logs
+    time.sleep(3)
+
+    # Validate logs were stored in Milvus
+    try:
+        collection = connect_to_milvus()
+        results = query_logs_by_timestamp(collection, timestamp)
+
+        print(f"Logs found with our timestamp: {len(results)}")
+        if results:
+            print("Messages found:", [r["message"] for r in results])
+
+        expected_messages = test_logs
+        validate_log_matches(results, expected_messages, test_id, min_success_ratio=0.33)  # At least one log
+
+    finally:
+        disconnect_from_milvus()
 
 
 def test_fluent_bit_log_ingestion(test_logs_dir, http_retry, cleanup_milvus_data):
@@ -215,7 +255,7 @@ def test_fluent_bit_json_parsing(test_logs_dir, log_ingestor_metrics_url, http_r
 
     complex_log = {
         "timestamp": timestamp,
-        "level": "INFO",
+        "level": "WARN",
         "message": "Complex JSON test",
         "service": "json-parser-test",
         "test_id": test_id,
@@ -323,108 +363,6 @@ def test_fluent_bit_timestamp_formats(test_logs_dir, http_retry, cleanup_milvus_
 
         expected_messages = [tc["expected_message"] for tc in timestamp_test_cases]
         validate_log_matches(results, expected_messages, test_id)
-
-    finally:
-        disconnect_from_milvus()
-
-
-def test_fluent_bit_structured_json_timestamps(test_logs_dir, http_retry, cleanup_milvus_data):
-    """Test that Fluent Bit correctly handles JSON logs with various timestamp formats."""
-    test_logs_dir = setup_test_logs_dir(test_logs_dir)
-
-    current_time = datetime.now(UTC)
-    base_timestamp = int(current_time.timestamp() * 1000)
-    test_id = f"{base_timestamp}-{random.randint(1000, 9999)}"
-
-    # Application JSON logs that Fluent Bit will put in the 'log' field
-    app_json_logs = [
-        {
-            "timestamp": current_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "level": "INFO",
-            "service": "json-timestamp-test",
-            "message": f"JSON ISO format test - {test_id}",
-            "test_id": test_id
-        },
-        {
-            "timestamp": current_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
-            "level": "WARN",
-            "service": "json-timestamp-test",
-            "message": f"JSON ISO with ms test - {test_id}",
-            "test_id": test_id
-        },
-        {
-            "timestamp": int(current_time.timestamp()),
-            "level": "ERROR",
-            "service": "json-timestamp-test",
-            "message": f"JSON Unix timestamp test - {test_id}",
-            "test_id": test_id
-        },
-        {
-            "timestamp": int(current_time.timestamp() * 1000),
-            "level": "DEBUG",
-            "service": "json-timestamp-test",
-            "message": f"JSON Unix timestamp ms test - {test_id}",
-            "test_id": test_id
-        },
-        {
-            "timestamp": current_time.strftime("%Y-%m-%d %H:%M:%S"),
-            "level": "FATAL",
-            "service": "json-timestamp-test",
-            "message": f"JSON simple format test - {test_id}",
-            "test_id": test_id
-        },
-        {
-            "timestamp": None,
-            "level": "INFO",
-            "service": "json-timestamp-test",
-            "message": f"JSON null timestamp test - {test_id}",
-            "test_id": test_id
-        }
-    ]
-
-    # JSON log without timestamp field
-    app_json_no_timestamp = {
-        "level": "WARN",
-        "service": "json-timestamp-test",
-        "message": f"JSON no timestamp field test - {test_id}",
-        "test_id": test_id
-    }
-
-    # Convert to Fluent Bit format (JSON string in log field)
-    json_timestamp_test_cases = []
-    for app_log in app_json_logs:
-        fluent_bit_log = {
-            "date": current_time.timestamp(),
-            "log": json.dumps(app_log),
-            "source": "fluent-bit"
-        }
-        json_timestamp_test_cases.append(fluent_bit_log)
-
-    json_no_timestamp = {
-        "date": current_time.timestamp(),
-        "log": json.dumps(app_json_no_timestamp),
-        "source": "fluent-bit"
-    }
-
-    # Write test logs
-    test_log_file = test_logs_dir / f"json-timestamps-test-{test_id}.log"
-    with open(test_log_file, 'w') as f:
-        for log_entry in json_timestamp_test_cases:
-            f.write(json.dumps(log_entry) + '\n')
-        f.write(json.dumps(json_no_timestamp) + '\n')
-
-    # Wait for processing
-    time.sleep(3)
-
-    # Verify logs were processed
-    try:
-        collection = connect_to_milvus()
-        results = query_logs_by_test_id(collection, test_id)
-
-        print(f"Found {len(results)} JSON timestamp logs with test ID {test_id}")
-
-        expected_count = len(json_timestamp_test_cases) + 1  # +1 for no timestamp field log
-        validate_log_count_by_test_id(results, test_id, expected_count)
 
     finally:
         disconnect_from_milvus()

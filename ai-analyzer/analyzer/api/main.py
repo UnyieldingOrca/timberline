@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from ..config.settings import Settings
+from ..logging_config import configure_logging
 from .routes import logs, analyses
 
 
@@ -21,6 +22,12 @@ def create_app() -> FastAPI:
 
     # Initialize settings
     settings = Settings()
+
+    # Configure logging (safe to call multiple times, it removes/reconfigures)
+    configure_logging(
+        level=settings.log_level,
+        json_format=(settings.log_format == 'json')
+    )
 
     # Create FastAPI app
     app = FastAPI(

@@ -51,6 +51,10 @@ spec:
         {{- end }}
         - name: STORE_RESULTS_IN_MILVUS
           value: {{ .Values.aiAnalyzer.config.storeResultsInMilvus | quote }}
+        - name: LOGURU_LEVEL
+          value: {{ .Values.aiAnalyzer.config.logLevel | default "INFO" }}
+        - name: LOG_FORMAT
+          value: {{ .Values.aiAnalyzer.config.logFormat | default "json" }}
         livenessProbe:
           httpGet:
             path: /health

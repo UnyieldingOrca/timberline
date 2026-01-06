@@ -24,16 +24,6 @@ pipeline:
       skip_empty_lines: on
       read_from_head: false
 
-  filters:
-    - name: record_modifier
-      match: '*'
-      record: source fluent-bit
-
-    - name: lua
-      match: '*'
-      script: /fluent-bit/etc/sampling.lua
-      call: subsample_info
-
   outputs:
     - name: http
       match: '*'

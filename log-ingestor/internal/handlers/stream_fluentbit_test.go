@@ -144,11 +144,11 @@ func TestFluentBitTransformation(t *testing.T) {
 	assert.Equal(t, "test-namespace", logEntry.Metadata["namespace_name"])
 	assert.Equal(t, "test-container", logEntry.Metadata["container_name"])
 
-	// Test source fallback
+	// Test that source defaults to "unknown" when not provided
 	entryNoSource := FluentBitLogEntry{
 		Date: 1758402234.567,
 		Log:  "Test log message",
 	}
 	transformedNoSource := entryNoSource.transformToLogEntry()
-	assert.Equal(t, "fluent-bit", transformedNoSource.Source) // Should default to fluent-bit
+	assert.Equal(t, "unknown", transformedNoSource.Source) // Should default to "unknown"
 }

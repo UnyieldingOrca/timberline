@@ -73,15 +73,6 @@ func TestMilvusClient_StoreLog_ValidationErrors(t *testing.T) {
 			},
 			expectError: "log validation failed",
 		},
-		{
-			name: "invalid log entry - missing source",
-			log: &models.LogEntry{
-				Timestamp: time.Now().UnixMilli(),
-				Message:   "test message",
-				// Missing source
-			},
-			expectError: "log validation failed",
-		},
 	}
 
 	for _, tt := range tests {

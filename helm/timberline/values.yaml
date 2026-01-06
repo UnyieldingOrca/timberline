@@ -23,6 +23,7 @@ fluentBit:
     flush: 5
     httpPort: 2020
     samplingRate: 10  # Percentage of INFO/DEBUG logs to keep
+    excludeAnnotated: true  # Exclude pods with fluentbit.io/exclude: "true" annotation
 
   service:
     type: ClusterIP
@@ -356,6 +357,9 @@ aiAnalyzer:
     openaiModel: ""  # e.g., gpt-4, gpt-3.5-turbo
     openaiProvider: ""  # e.g., openai, azure
     storeResultsInMilvus: "false"
+    # Logging configuration
+    logLevel: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    logFormat: "json"  # json or text
 
   service:
     type: ClusterIP

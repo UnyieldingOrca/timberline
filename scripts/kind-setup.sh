@@ -88,15 +88,15 @@ cd "$PROJECT_ROOT"
 
 # Build log-ingestor image
 echo "Building log-ingestor image..."
-docker build -t timberline/log-ingestor:latest ./log-ingestor
+DOCKER_BUILDKIT=1 docker build -t timberline/log-ingestor:latest ./log-ingestor
 
 # Build ai-analyzer image
 echo "Building ai-analyzer image..."
-docker build -t timberline/ai-analyzer:latest ./ai-analyzer
+DOCKER_BUILDKIT=1 docker build -t timberline/ai-analyzer:latest ./ai-analyzer
 
 # Build web-ui image
 echo "Building web-ui image..."
-docker build -t timberline/web-ui:latest ./web-ui
+DOCKER_BUILDKIT=1 docker build -t timberline/web-ui:latest ./web-ui
 
 # Load images into kind cluster
 echo "Loading images into kind cluster..."
