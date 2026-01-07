@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Search, RefreshCw, Sparkles, Filter, AlertCircle, AlertTriangle, Info, XCircle } from 'lucide-react';
-import { logsApi } from '../lib/api';
+import { logsApi, type LogEntry } from '../lib/api';
 import { format } from 'date-fns';
 
 export function LogsViewer() {
@@ -24,7 +24,7 @@ export function LogsViewer() {
     },
   });
 
-  const filteredLogs = logs?.filter(log => {
+  const filteredLogs = logs?.filter((log: LogEntry) => {
     if (!searchQuery || useSemanticSearch) return true;
     return log.log.toLowerCase().includes(searchQuery.toLowerCase());
   });

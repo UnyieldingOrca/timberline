@@ -58,9 +58,9 @@ export function AnalysisDashboard() {
     return 'text-emerald-600';
   };
 
-  const completedCount = analyses?.filter(a => a.status === 'completed').length || 0;
-  const runningCount = analyses?.filter(a => a.status === 'running').length || 0;
-  const failedCount = analyses?.filter(a => a.status === 'failed').length || 0;
+  const completedCount = analyses?.filter((a: Analysis) => a.status === 'completed').length || 0;
+  const runningCount = analyses?.filter((a: Analysis) => a.status === 'running').length || 0;
+  const failedCount = analyses?.filter((a: Analysis) => a.status === 'failed').length || 0;
 
   return (
     <div className="space-y-6">
