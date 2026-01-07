@@ -189,3 +189,116 @@ class TestLogsAPI:
         # Verify Milvus client was connected and disconnected
         mock_client.connect.assert_called_once()
         mock_client.disconnect.assert_called_once()
+
+    @patch("analyzer.api.routes.logs.MilvusQueryEngine")
+    def test_get_logs_with_correct_fluentbit_metadata_structure(self, mock_milvus, test_client):
+        """
+        Test that logs API correctly handles Fluent Bit metadata structure.
+
+        CRITICAL: This test uses the ACTUAL metadata structure from Fluent Bit,
+        where kubernetes fields are stored directly in metadata (NOT nested under 'kubernetes' key).
+
+        This test would have caught the bug where code expected:
+          log.metadata.get('kubernetes', {}).get('namespace_name')
+        But actual structure is:
+          log.metadata.get('namespace_name')
+        """
+        mock_client = Mock()
+        mock_milvus.return_value = mock_client
+
+        # CORRECT metadata structure from Fluent Bit → Log Ingestor → Milvus
+        mock_log = Mock()
+        mock_log.id = 123
+        mock_log.timestamp = int(datetime.now().timestamp() * 1000)
+        mock_log.message = "Test application started"
+        mock_log.level = "INFO"
+        mock_log.metadata = {
+            "namespace_name": "timberline",
+            "pod_name": "web-app-5f7d9c8b-x9z2l",
+            "container_name": "web",
+            "host": "node-1",
+            "labels": {
+                "app": "web-app",
+                "version": "v1.2.3"
+            }
+        }
+
+        mock_client.query_time_range.return_value = [mock_log]
+
+        # Make request
+        response = test_client.get("/api/v1/logs")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+
+        # Verify Kubernetes metadata is correctly extracted
+        assert data[0]["namespace"] == "timberline", "namespace should be 'timberline', not 'unknown'"
+        assert data[0]["pod_name"] == "web-app-5f7d9c8b-x9z2l", "pod_name should match metadata"
+        assert data[0]["container_name"] == "web", "container_name should be 'web', not 'unknown'"
+        assert data[0]["node_name"] == "node-1", "node_name should be extracted from host field"
+        assert data[0]["labels"]["app"] == "web-app", "labels should be preserved"
+        assert data[0]["log"] == "Test application started"
+        assert data[0]["severity"] == "INFO"
+
+    @patch("analyzer.api.routes.logs.MilvusQueryEngine")
+    def test_get_logs_namespace_filter_with_correct_metadata(self, mock_milvus, test_client):
+        """
+        Test that namespace filtering works with the correct Fluent Bit metadata structure.
+
+        This test ensures namespace filtering accesses metadata.get('namespace_name') directly,
+        not via metadata.get('kubernetes', {}).get('namespace_name').
+        """
+        mock_client = Mock()
+        mock_milvus.return_value = mock_client
+
+        # Create logs from different namespaces with CORRECT metadata structure
+        log1 = Mock()
+        log1.id = 1
+        log1.timestamp = int(datetime.now().timestamp() * 1000)
+        log1.message = "Production log"
+        log1.level = "INFO"
+        log1.metadata = {
+            "namespace_name": "production",
+            "pod_name": "api-server-abc",
+            "container_name": "api"
+        }
+
+        log2 = Mock()
+        log2.id = 2
+        log2.timestamp = int(datetime.now().timestamp() * 1000)
+        log2.message = "Staging log"
+        log2.level = "INFO"
+        log2.metadata = {
+            "namespace_name": "staging",
+            "pod_name": "api-server-xyz",
+            "container_name": "api"
+        }
+
+        log3 = Mock()
+        log3.id = 3
+        log3.timestamp = int(datetime.now().timestamp() * 1000)
+        log3.message = "Another production log"
+        log3.level = "WARNING"
+        log3.metadata = {
+            "namespace_name": "production",
+            "pod_name": "worker-def",
+            "container_name": "worker"
+        }
+
+        mock_client.query_time_range.return_value = [log1, log2, log3]
+
+        # Filter by production namespace
+        response = test_client.get("/api/v1/logs?namespace=production")
+
+        assert response.status_code == 200
+        data = response.json()
+
+        # Should only return logs from production namespace
+        assert len(data) == 2, "Should return exactly 2 logs from production namespace"
+        assert all(log["namespace"] == "production" for log in data), "All logs should be from production"
+        assert data[0]["pod_name"] in ["api-server-abc", "worker-def"]
+        assert data[1]["pod_name"] in ["api-server-abc", "worker-def"]
+
+        # Verify staging log was filtered out
+        assert not any(log["pod_name"] == "api-server-xyz" for log in data)

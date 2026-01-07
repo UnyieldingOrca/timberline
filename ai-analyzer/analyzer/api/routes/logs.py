@@ -40,18 +40,19 @@ async def get_logs(
         logs = milvus_client.query_time_range(start_dt, end_dt)
 
         # Filter by namespace and pod_name if provided
+        # The metadata field contains the kubernetes metadata directly (not nested)
         if namespace:
             logs = [
                 log for log in logs
                 if isinstance(log.metadata, dict) and
-                log.metadata.get('kubernetes', {}).get('namespace_name') == namespace
+                log.metadata.get('namespace_name') == namespace
             ]
 
         if pod_name:
             logs = [
                 log for log in logs
                 if isinstance(log.metadata, dict) and
-                log.metadata.get('kubernetes', {}).get('pod_name') == pod_name
+                log.metadata.get('pod_name') == pod_name
             ]
 
         # Limit results
@@ -60,7 +61,9 @@ async def get_logs(
         # Convert to response model
         response = []
         for log in logs:
-            k8s_metadata = log.metadata.get('kubernetes', {}) if isinstance(log.metadata, dict) else {}
+            # The metadata field contains the kubernetes metadata directly (not nested under 'kubernetes' key)
+            # because the log-ingestor extracts it from Fluent Bit's kubernetes field
+            k8s_metadata = log.metadata if isinstance(log.metadata, dict) else {}
 
             response.append(LogEntryResponse(
                 id=str(log.id),

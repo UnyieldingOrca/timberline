@@ -42,11 +42,12 @@ async def run_analysis_task(job_id: str, settings, namespace: str = None, time_r
         logs = milvus_client.query_time_range(start_time, end_time)
 
         # Filter by namespace if provided
+        # The metadata field contains the kubernetes metadata directly (not nested)
         if namespace:
             logs = [
                 log for log in logs
                 if isinstance(log.metadata, dict) and
-                log.metadata.get('kubernetes', {}).get('namespace_name') == namespace
+                log.metadata.get('namespace_name') == namespace
             ]
 
         logger.info(f"Retrieved {len(logs)} logs for analysis")
