@@ -58,7 +58,7 @@ export function LogsViewer() {
     }
   };
 
-  const severityCounts = filteredLogs?.reduce((acc, log) => {
+  const severityCounts = filteredLogs?.reduce((acc: Record<string, number>, log) => {
     const severity = log.severity?.toLowerCase() || 'unknown';
     acc[severity] = (acc[severity] || 0) + 1;
     return acc;
