@@ -22,20 +22,18 @@ class TestLogsAPI:
         mock_client = Mock()
         mock_milvus.return_value = mock_client
 
-        # Mock log data
+        # Mock log data with correct flat metadata structure (Fluent Bit format)
         mock_log = Mock()
         mock_log.id = 1
         mock_log.timestamp = int(datetime.now().timestamp() * 1000)
         mock_log.message = "Test log message"
         mock_log.level = "INFO"
         mock_log.metadata = {
-            "kubernetes": {
-                "namespace_name": "default",
-                "pod_name": "test-pod",
-                "container_name": "test-container",
-                "host": "node-1",
-                "labels": {"app": "test"}
-            }
+            "namespace_name": "default",
+            "pod_name": "test-pod",
+            "container_name": "test-container",
+            "host": "node-1",
+            "labels": {"app": "test"}
         }
 
         mock_client.query_time_range.return_value = [mock_log]
@@ -63,18 +61,16 @@ class TestLogsAPI:
         mock_client = Mock()
         mock_milvus.return_value = mock_client
 
-        # Create multiple logs
+        # Create multiple logs with correct flat metadata structure
         mock_log1 = Mock()
         mock_log1.id = 1
         mock_log1.timestamp = int(datetime.now().timestamp() * 1000)
         mock_log1.message = "Log from default namespace"
         mock_log1.level = "INFO"
         mock_log1.metadata = {
-            "kubernetes": {
-                "namespace_name": "default",
-                "pod_name": "test-pod-1",
-                "container_name": "test-container",
-            }
+            "namespace_name": "default",
+            "pod_name": "test-pod-1",
+            "container_name": "test-container",
         }
 
         mock_log2 = Mock()
@@ -83,11 +79,9 @@ class TestLogsAPI:
         mock_log2.message = "Log from kube-system namespace"
         mock_log2.level = "WARNING"
         mock_log2.metadata = {
-            "kubernetes": {
-                "namespace_name": "kube-system",
-                "pod_name": "test-pod-2",
-                "container_name": "test-container",
-            }
+            "namespace_name": "kube-system",
+            "pod_name": "test-pod-2",
+            "container_name": "test-container",
         }
 
         mock_client.query_time_range.return_value = [mock_log1, mock_log2]
@@ -129,7 +123,7 @@ class TestLogsAPI:
         mock_client = Mock()
         mock_milvus.return_value = mock_client
 
-        # Create many logs
+        # Create many logs with correct flat metadata structure
         logs = []
         for i in range(150):
             mock_log = Mock()
@@ -138,11 +132,9 @@ class TestLogsAPI:
             mock_log.message = f"Log {i}"
             mock_log.level = "INFO"
             mock_log.metadata = {
-                "kubernetes": {
-                    "namespace_name": "default",
-                    "pod_name": f"pod-{i}",
-                    "container_name": "container",
-                }
+                "namespace_name": "default",
+                "pod_name": f"pod-{i}",
+                "container_name": "container",
             }
             logs.append(mock_log)
 
