@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     loki_org_id: str | None = None
 
     # LLM (via OpenRouter)
-    llm_model: str = "anthropic/claude-sonnet-4"
+    llm_model: str = "moonshotai/kimi-k2.5"
 
     # Knowledge base
     knowledge_base_path: Path = Path("./knowledge_base")

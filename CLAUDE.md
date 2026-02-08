@@ -22,8 +22,10 @@ Tools (async functions) → ToolRegistry → Deep Agent (deepagents SDK)
 pip install -e ".[all]"     # Install with all dependencies
 pip install -e ".[dev]"     # Install with dev dependencies only
 
-just dev                    # Format, lint, test
-just test                   # Run pytest
+just dev                    # Format, lint, unit test
+just test                   # Run all tests (unit + integration)
+just test-unit              # Run unit tests only
+just test-integration       # Run integration tests (requires Kind cluster)
 just lint                   # Run ruff
 just fmt                    # Run black + ruff fix
 
@@ -82,14 +84,19 @@ timberline/
 │       └── system.py             # System prompt builder
 │
 ├── tests/                        # pytest test suite
-│   ├── conftest.py               # Shared fixtures
-│   ├── test_config.py
-│   ├── test_agent.py             # Mocked deep agent tests
-│   ├── test_loki_client.py       # respx-mocked Loki client tests
-│   ├── test_loki_tools.py
-│   ├── test_knowledge_store.py
-│   ├── test_knowledge_tools.py
-│   ├── test_tool_registry.py
+│   ├── unit/                     # Unit tests (mocked, no external deps)
+│   │   ├── conftest.py           # Shared unit test fixtures
+│   │   ├── test_config.py
+│   │   ├── test_agent.py
+│   │   ├── test_loki_client.py
+│   │   ├── test_loki_tools.py
+│   │   ├── test_knowledge_store.py
+│   │   └── test_knowledge_tools.py
+│   ├── integration/              # Integration tests (require Kind cluster)
+│   │   ├── conftest.py           # Loki reachability check + fixtures
+│   │   ├── test_loki_client_integration.py
+│   │   ├── test_loki_tools_integration.py
+│   │   └── test_knowledge_tools_integration.py
 │   └── test_cli.py
 │
 ├── knowledge_base/               # Default KB directory (gitignored except README)
@@ -141,16 +148,15 @@ Filesystem directory with path traversal protection (`KnowledgeStore._validate_p
 ## Testing
 
 ```bash
-pytest                    # Run all 46 tests
-pytest tests/test_loki_client.py -v   # Specific test file
-pytest --cov=timberline   # With coverage
+pytest                          # Run all tests (unit + integration)
+pytest tests/unit/              # Unit tests only (no external deps)
+pytest tests/integration/       # Integration tests (Kind cluster)
+pytest --cov=timberline         # With coverage
 ```
 
-Tests use:
-- `respx` for HTTP mocking (Loki client tests)
-- `tmp_path` for filesystem tests (knowledge store)
-- `unittest.mock` for LLM/agent mocking (agent tests)
-- `click.testing.CliRunner` for CLI tests
+**Unit tests** use `respx` for HTTP mocking, `tmp_path` for filesystem, `unittest.mock` for LLM/agent, `CliRunner` for CLI.
+
+**Integration tests** hit a real Loki instance via Kind cluster. Loki-dependent tests auto-skip when Loki is unreachable; knowledge base integration tests always run.
 
 ## Common Workflows
 

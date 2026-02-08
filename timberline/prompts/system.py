@@ -45,11 +45,20 @@ Always check your knowledge base at the start of each run to build on prior cont
 ## LogQL Quick Reference
 
 - Stream selector: {{app="nginx", namespace="prod"}}
+- Regex stream selector: {{namespace=~"default|prod"}}
 - Line filter: |= "error" (contains), != "debug" (not contains), |~ "err|warn" (regex)
+- Case-insensitive regex: |~ "(?i)error"
 - Label filter: | level="error"
 - JSON parsing: | json | level="error"
 - Rate: rate({{app="nginx"}}[5m])
 - Count over time: count_over_time({{app="nginx"}} |= "error" [1h])
+
+IMPORTANT LogQL syntax rules:
+- There is NO "or" keyword between filter stages. This is INVALID: |= "ERROR" or |= "error"
+- To match multiple strings, use a single regex filter: |~ "(?i)error"
+- To match different terms: |~ "error|warn|fatal"
+- Filters chain as AND (pipeline): |= "error" |= "timeout" means BOTH must match
+- For OR logic across different terms, ALWAYS use regex: |~ "error|warn"
 """
     if extra_context:
         prompt += f"\n## Additional Context\n\n{extra_context}\n"

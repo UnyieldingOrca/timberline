@@ -52,8 +52,8 @@ async def test_query_logs_error(tools):
         return_value=httpx.Response(500, text="Internal error")
     )
     query_logs = _tool_by_name(tools, "query_logs")
-    with pytest.raises(Exception):
-        await query_logs(query='{app="test"}')
+    result = await query_logs(query='{app="test"}')
+    assert result.startswith("Error:")
 
 
 @respx.mock

@@ -41,8 +41,8 @@ async def test_write_and_read(tools):
 @pytest.mark.asyncio
 async def test_read_missing(tools):
     read = _tool_by_name(tools, "read_knowledge")
-    with pytest.raises(FileNotFoundError):
-        await read(path="nope.md")
+    result = await read(path="nope.md")
+    assert result.startswith("Error:")
 
 
 @pytest.mark.asyncio
@@ -66,5 +66,6 @@ async def test_search(tools, store):
 @pytest.mark.asyncio
 async def test_path_traversal(tools):
     read = _tool_by_name(tools, "read_knowledge")
-    with pytest.raises(ValueError, match="traversal"):
-        await read(path="../../etc/passwd")
+    result = await read(path="../../etc/passwd")
+    assert "Error:" in result
+    assert "traversal" in result

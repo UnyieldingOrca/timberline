@@ -8,12 +8,20 @@ default:
 install:
     pip install -e ".[all]"
 
-# Full dev cycle: format, lint, test
-dev: fmt lint test
+# Full dev cycle: format, lint, unit test
+dev: fmt lint test-unit
 
-# Run tests
+# Run all tests
 test:
     pytest
+
+# Run unit tests only
+test-unit:
+    pytest tests/unit/
+
+# Run integration tests (requires Kind cluster with Loki)
+test-integration:
+    pytest tests/integration/
 
 # Run linter
 lint:

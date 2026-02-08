@@ -2,9 +2,28 @@
 
 from __future__ import annotations
 
+import re
+import time
 from typing import Any
 
 import httpx
+
+_DURATION_RE = re.compile(r"^(\d+)\s*(s|m|h|d|w)$")
+_UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+
+
+def _resolve_time(value: str | None) -> str | None:
+    """Convert a relative duration string (e.g. '1h', '24h', '7d') to a
+    nanosecond Unix epoch timestamp string.  RFC3339 and epoch values pass
+    through unchanged.  Returns *None* when *value* is None/empty."""
+    if not value:
+        return None
+    m = _DURATION_RE.match(value.strip())
+    if m:
+        seconds_ago = int(m.group(1)) * _UNIT_SECONDS[m.group(2)]
+        ns = int((time.time() - seconds_ago) * 1e9)
+        return str(ns)
+    return value
 
 
 class LokiClient:
@@ -42,10 +61,12 @@ class LokiClient:
     ) -> dict[str, Any]:
         """Execute a LogQL query_range request."""
         params: dict[str, Any] = {"query": query, "limit": limit, "direction": direction}
-        if start:
-            params["start"] = start
-        if end:
-            params["end"] = end
+        resolved_start = _resolve_time(start)
+        resolved_end = _resolve_time(end)
+        if resolved_start:
+            params["start"] = resolved_start
+        if resolved_end:
+            params["end"] = resolved_end
         resp = await self._client.get("/loki/api/v1/query_range", params=params)
         resp.raise_for_status()
         return resp.json()
@@ -55,10 +76,12 @@ class LokiClient:
     ) -> list[str]:
         """List available label names."""
         params: dict[str, str] = {}
-        if start:
-            params["start"] = start
-        if end:
-            params["end"] = end
+        resolved_start = _resolve_time(start)
+        resolved_end = _resolve_time(end)
+        if resolved_start:
+            params["start"] = resolved_start
+        if resolved_end:
+            params["end"] = resolved_end
         resp = await self._client.get("/loki/api/v1/labels", params=params)
         resp.raise_for_status()
         return resp.json().get("data", [])
@@ -68,10 +91,12 @@ class LokiClient:
     ) -> list[str]:
         """Get values for a specific label."""
         params: dict[str, str] = {}
-        if start:
-            params["start"] = start
-        if end:
-            params["end"] = end
+        resolved_start = _resolve_time(start)
+        resolved_end = _resolve_time(end)
+        if resolved_start:
+            params["start"] = resolved_start
+        if resolved_end:
+            params["end"] = resolved_end
         resp = await self._client.get(f"/loki/api/v1/label/{name}/values", params=params)
         resp.raise_for_status()
         return resp.json().get("data", [])
@@ -84,10 +109,12 @@ class LokiClient:
     ) -> list[dict[str, str]]:
         """Find active log streams matching selectors."""
         params: dict[str, Any] = {"match[]": match}
-        if start:
-            params["start"] = start
-        if end:
-            params["end"] = end
+        resolved_start = _resolve_time(start)
+        resolved_end = _resolve_time(end)
+        if resolved_start:
+            params["start"] = resolved_start
+        if resolved_end:
+            params["end"] = resolved_end
         resp = await self._client.get("/loki/api/v1/series", params=params)
         resp.raise_for_status()
         return resp.json().get("data", [])
@@ -101,10 +128,12 @@ class LokiClient:
     ) -> dict[str, Any]:
         """Get volume statistics over time for matching streams."""
         params: dict[str, Any] = {"query": query, "limit": limit}
-        if start:
-            params["start"] = start
-        if end:
-            params["end"] = end
+        resolved_start = _resolve_time(start)
+        resolved_end = _resolve_time(end)
+        if resolved_start:
+            params["start"] = resolved_start
+        if resolved_end:
+            params["end"] = resolved_end
         resp = await self._client.get("/loki/api/v1/index/volume_range", params=params)
         resp.raise_for_status()
         return resp.json()
@@ -117,10 +146,12 @@ class LokiClient:
     ) -> dict[str, Any]:
         """Get index-level statistics (stream count, bytes, entries)."""
         params: dict[str, Any] = {"query": query}
-        if start:
-            params["start"] = start
-        if end:
-            params["end"] = end
+        resolved_start = _resolve_time(start)
+        resolved_end = _resolve_time(end)
+        if resolved_start:
+            params["start"] = resolved_start
+        if resolved_end:
+            params["end"] = resolved_end
         resp = await self._client.get("/loki/api/v1/index/stats", params=params)
         resp.raise_for_status()
         return resp.json()
