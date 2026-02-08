@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: log-generator
+  labels:
+    app: log-generator
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: log-generator
+  template:
+    metadata:
+      labels:
+        app: log-generator
+    spec:
+      containers:
+        - name: log-generator
+          image: busybox:1.37
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Pick a random service identity for this pod
+              SERVICES="api-gateway auth-service payment-service order-service inventory-service"
+              SVC=$(echo $SERVICES | tr ' ' '\n' | shuf -n 1)
+              
+              while true; do
+                TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+                R=$((RANDOM % 100))
+                
+                if [ $R -lt 50 ]; then
+                  echo "{\"ts\":\"$TS\",\"level\":\"INFO\",\"service\":\"$SVC\",\"msg\":\"Request processed successfully\",\"duration_ms\":$((RANDOM % 500))}"
+                elif [ $R -lt 70 ]; then
+                  echo "{\"ts\":\"$TS\",\"level\":\"DEBUG\",\"service\":\"$SVC\",\"msg\":\"Cache hit for key user:$((RANDOM % 1000))\"}"
+                elif [ $R -lt 85 ]; then
+                  echo "{\"ts\":\"$TS\",\"level\":\"WARN\",\"service\":\"$SVC\",\"msg\":\"Slow query detected\",\"duration_ms\":$((RANDOM % 5000 + 1000))}"
+                elif [ $R -lt 95 ]; then
+                  echo "{\"ts\":\"$TS\",\"level\":\"ERROR\",\"service\":\"$SVC\",\"msg\":\"Connection refused to downstream service\",\"error\":\"dial tcp 10.0.0.$((RANDOM % 255)):8080: connect: connection refused\"}"
+                else
+                  echo "{\"ts\":\"$TS\",\"level\":\"ERROR\",\"service\":\"$SVC\",\"msg\":\"Unhandled exception in request handler\",\"error\":\"NullPointerException\",\"stack\":\"at com.example.Handler.process(Handler.java:42)\"}"
+                fi
+                
+                sleep $((RANDOM % 3 + 1))
+              done

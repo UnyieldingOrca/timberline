@@ -1,134 +1,161 @@
 # Timberline
-AI-powered log analysis and actionable reporting
 
-Timberline is a comprehensive log management and analysis platform designed to collect, process, and analyze logs from Kubernetes environments with AI-powered insights and actionable reporting.
+Agentic log analysis for Loki.
 
-## Overview
+Timberline connects to an existing [Loki](https://grafana.com/oss/loki/) instance and uses a [LangGraph](https://langchain-ai.github.io/langgraph/) ReAct agent to autonomously query logs, find issues, and build a persistent knowledge base over time. No web UI, no database -- just a CLI tool that reasons about your logs.
 
-Timberline consists of several key components that work together to provide end-to-end log management:
+## How It Works
 
-- **Log Collector**: A high-performance Go-based DaemonSet that collects logs from Kubernetes containers
-- **Log Ingestor**: Processes and stores incoming log data
-- **Query Engine**: Enables fast querying and retrieval of log data
-- **AI Analysis Engine**: Provides intelligent analysis and anomaly detection (implemented)
-- **Reporting Service**: Generates actionable insights and reports
-- **Web Dashboard**: User interface for visualization and management
+```
+                    ┌──────────────────────┐
+                    │     LLM Agent        │
+                    │  (Anthropic / OpenAI)│
+                    └──────┬───────────────┘
+                           │
+                    ┌──────▼───────────────┐
+                    │    Tool Registry     │
+                    │   (10 tools total)   │
+                    └──┬───────────────┬───┘
+                       │               │
+              ┌────────▼──────┐ ┌──────▼────────┐
+              │  Loki Tools   │ │  KB Tools     │
+              │  (6 tools)    │ │  (4 tools)    │
+              └────────┬──────┘ └──────┬────────┘
+                       │               │
+              ┌────────▼──────┐ ┌──────▼────────┐
+              │  Loki API     │ │  Filesystem   │
+              │  (httpx)      │ │  Knowledge    │
+              └───────────────┘ └───────────────┘
+```
 
-## Components
-
-### Log Collector
-
-The Log Collector is a Go-based DaemonSet that runs on every Kubernetes node to collect container logs in real-time. It provides efficient log collection with Kubernetes metadata enrichment, configurable filtering, and secure forwarding to the log ingestion pipeline.
-
-For detailed information about the Log Collector including configuration, deployment, monitoring, and development, see the [Log Collector README](log-collector/README.md).
-
-**Key Features:**
-- Real-time log tailing with pre-filtering
-- Kubernetes metadata enrichment
-- Buffering and batching for efficiency
-- Prometheus metrics and health endpoints
-- TLS support and secure communication
-
-### AI Analysis Engine
-
-The AI Analysis Engine is a Python-based service that performs intelligent log analysis using LLM-powered insights. It analyzes logs stored in the Milvus vector database to identify concerning patterns, rank severity, and generate actionable reports.
-
-**Key Features:**
-- Real-time log clustering and pattern detection
-- LLM-based severity scoring and categorization
-- Automated daily analysis reports
-- Integration with local and cloud LLM providers
-- Comprehensive health monitoring and metrics
-
-For detailed information about the AI Analysis Engine, see the [AI Analyzer documentation](ai-analyzer/SPEC.md).
-
-### Other Components
-
-*Additional components (Log Ingestor, Query Engine, Reporting Service, etc.) will be documented as they are developed.*
+The agent:
+1. Checks its knowledge base for prior context
+2. Surveys the Loki landscape (labels, volumes)
+3. Triages errors and warnings across namespaces
+4. Deep dives into significant issues
+5. Compares against known patterns
+6. Writes findings and updates the knowledge base
 
 ## Quick Start
 
-### Prerequisites
+```bash
+# Install
+pip install -e ".[all]"
 
-- Kubernetes cluster (1.20+)
-- kubectl configured
-- Docker (for building images)
+# Configure
+cp .env.example .env
+# Edit .env with your Loki URL and API key
 
-### Deployment
+# Check connectivity
+timberline health
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/timberline/timberline.git
-   cd timberline
-   ```
-
-2. **Deploy the log collector:**
-   ```bash
-   cd log-collector
-   make deploy-all
-   ```
-
-3. **Verify deployment:**
-   ```bash
-   kubectl get pods -n timberline -l app=timberline-log-collector
-   ```
-
-## Architecture
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Log Collector │    │   Log Ingestor  │    │  Query Engine   │
-│   (DaemonSet)   │───▶│                 │───▶│                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Kubernetes    │    │    Database     │    │ AI Analysis     │
-│    Metadata     │    │    Storage      │    │    Engine       │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+# Run analysis
+timberline analyze --since 1h
 ```
 
-## Project Structure
+## CLI
+
+```bash
+timberline analyze              # Analyze logs from the last 24h
+timberline analyze --since 1h   # Last hour
+timberline analyze --namespace prod
+
+timberline health               # Check Loki connectivity
+
+timberline kb list              # List knowledge base files
+timberline kb view findings/2026-02-07.md
+timberline kb clear --confirm   # Clear knowledge base
+```
+
+## Configuration
+
+Set via environment variables or `.env` file:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TIMBERLINE_LOKI_URL` | `http://localhost:3100` | Loki base URL |
+| `TIMBERLINE_LOKI_ORG_ID` | | Multi-tenant org ID |
+| `TIMBERLINE_LLM_MODEL` | `anthropic/claude-sonnet-4` | OpenRouter model ID |
+| `OPENROUTER_API_KEY` | | OpenRouter API key |
+| `TIMBERLINE_KNOWLEDGE_BASE_PATH` | `./knowledge_base` | KB directory |
+| `TIMBERLINE_MAX_AGENT_TURNS` | `50` | Max agent loop iterations |
+
+See `.env.example` for the full list.
+
+## Agent Tools
+
+**Loki tools** -- query and explore your log data:
+- `query_logs` -- Execute LogQL queries with time range and filters
+- `get_labels` -- List available label names
+- `get_label_values` -- Get values for a specific label
+- `get_series` -- Find active log streams matching selectors
+- `get_log_volume` -- Volume statistics over time
+- `get_log_stats` -- Index-level statistics (stream count, bytes, entries)
+
+**Knowledge base tools** -- persistent memory across runs:
+- `read_knowledge` -- Read a file from the knowledge base
+- `write_knowledge` -- Write or append to a knowledge base file
+- `list_knowledge` -- List files with glob support
+- `search_knowledge` -- Grep the knowledge base for a string
+
+## Knowledge Base
+
+The agent builds a persistent knowledge base on the filesystem:
 
 ```
-timberline/
-├── log-collector/              # Go-based log collection DaemonSet
-│   ├── cmd/                   # Application entry point
-│   ├── internal/              # Core implementation
-│   ├── k8s/                   # Kubernetes manifests
-│   └── README.md              # Detailed log collector documentation
-├── SPEC.md                    # Project specifications
-├── README.md                  # This file
-└── LICENSE                    # Project license
+knowledge_base/
+├── findings/     # Per-run analysis (2026-02-07.md, etc.)
+├── patterns/     # Recurring error patterns and signatures
+├── services/     # Per-service learned context
+├── config/       # Discovered namespaces, labels, thresholds
+└── meta/         # Run metadata (last-run.json)
 ```
+
+Each run builds on prior knowledge, allowing the agent to track trends and compare against known patterns.
 
 ## Development
 
-### Contributing
+```bash
+pip install -e ".[all]"    # Install with all dependencies
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Run tests and ensure they pass
-6. Submit a pull request
+just dev                   # Format + lint + test
+just test                  # Run tests only
+just lint                  # Run ruff
+just fmt                   # Run black + ruff fix
+```
 
-### Component Development
+### Local Loki Environment
 
-Each component has its own documentation and development guidelines:
-- [Log Collector Development Guide](log-collector/README.md#development)
+A Kind cluster with Loki and a log generator for local development:
 
-## Security
+```bash
+just kind-up      # Create cluster with Loki + Promtail + log generator
+just kind-logs    # Verify Loki has data
+just kind-down    # Tear down
+```
 
-- Components run with minimal privileges
-- Secure communication between services
-- Kubernetes security best practices
-- Non-root container execution
+This deploys Loki (single-binary mode) on port 3100, Promtail for log collection, and a busybox-based log generator that emits structured JSON logs simulating multiple microservices.
+
+### Project Structure
+
+```
+timberline/
+├── timberline/               # Main package
+│   ├── config.py             # Settings (pydantic-settings)
+│   ├── cli.py                # Click CLI
+│   ├── agent.py              # LangGraph ReAct agent
+│   ├── loki/client.py        # Async httpx Loki client
+│   ├── tools/                # Tool layer
+│   │   ├── base.py           # ToolResult, ToolDefinition, ToolRegistry
+│   │   ├── loki_tools.py     # 6 Loki tools
+│   │   └── knowledge_tools.py # 4 KB tools
+│   ├── knowledge/store.py    # Filesystem knowledge store
+│   └── prompts/system.py     # System prompt builder
+├── tests/                    # 46 tests
+├── dev/                      # Kind + Loki dev environment
+└── knowledge_base/           # Default KB directory
+```
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Support
-
-For issues, questions, or contributions, please visit our [GitHub repository](https://github.com/timberline/timberline) or contact the development team.
+This project is licensed under the MIT License -- see the [LICENSE](LICENSE) file for details.
